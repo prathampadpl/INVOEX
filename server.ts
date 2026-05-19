@@ -536,6 +536,8 @@ app.post("/api/extract", verifyToken, extractLimiter, upload.single("file"), asy
     let size = 0;
     let buffer: Buffer;
     let activeOrgId = req.body.orgId;
+    const correctionsLog = req.body.correctionsLog;
+    const knownVendors = req.body.knownVendors;
 
     if (!req.file) {
       const { fileUrl, filename, fileName, fileType } = req.body;
@@ -769,6 +771,14 @@ Return ONLY a valid JSON ARRAY. If a single invoice spans multiple pages, it MUS
 
     if (ocrText) {
       prompt += `\n\nLAYER 1 RAW OCR TEXT (For Cross-Reference):\n${ocrText}\n`;
+    }
+
+    if (correctionsLog) {
+      prompt += `\n\n${correctionsLog}\n`;
+    }
+
+    if (knownVendors) {
+      prompt += `\n\n${knownVendors}\n`;
     }
 
     let partsArray: any[] = [];
