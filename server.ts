@@ -16,7 +16,7 @@ import * as FileType from 'file-type';
 
 // Initialize Firebase Admin
 import fs from 'fs';
-let projectId = process.env.FIREBASE_PROJECT_ID || 'demo-project';
+let projectId = process.env.FIREBASE_PROJECT_ID || 'studio-2901235520-386ed';
 
 // Try to load projectId from local config file if env var is missing
 if (!process.env.FIREBASE_PROJECT_ID) {
@@ -24,10 +24,13 @@ if (!process.env.FIREBASE_PROJECT_ID) {
     const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
     if (fs.existsSync(configPath)) {
       const configStr = fs.readFileSync(configPath, 'utf-8');
-      projectId = JSON.parse(configStr).projectId;
+      projectId = JSON.parse(configStr).projectId || 'studio-2901235520-386ed';
+    } else {
+      projectId = 'studio-2901235520-386ed';
     }
   } catch (e) {
     console.warn("Failed to read firebase-applet-config.json:", e);
+    projectId = 'studio-2901235520-386ed';
   }
 }
 
