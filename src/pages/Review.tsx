@@ -366,15 +366,28 @@ export default function Review() {
             try {
                const { setDoc, increment } = await import('firebase/firestore');
                const vendorName = editData?.vendorName || invoice?.vendorName || 'Unknown';
-               const safeId = btoa(unescape(encodeURIComponent(`${vendorName}:${field}:${original}:${corrected}`)))
+               
+               // Sanitize to prevent persistent prompt injection
+               let cleanedCorrected = String(corrected).replace(/[\x00-\x1F\x7F-\x9F]/g, "").trim();
+               if (cleanedCorrected.length > 500) {
+                 cleanedCorrected = cleanedCorrected.substring(0, 500);
+               }
+               const lowerCorr = cleanedCorrected.toLowerCase();
+               const isSuspect = ["ignore", "instruction", "output", "system", "rule", "prompt"].some(p => lowerCorr.includes(p));
+               if (isSuspect) {
+                 console.warn("Rejected suspicious correction value to prevent prompt injection:", cleanedCorrected);
+                 continue;
+               }
+
+               const safeId = btoa(unescape(encodeURIComponent(`${vendorName}:${field}:${original}:${cleanedCorrected}`)))
                   .replace(/\//g, '_').replace(/\+/g, '-').replace(/=/g, '').substring(0, 500);
                   
                const correctionRef = doc(db, `organizations/${orgId}/corrections_log`, safeId);
                await setDoc(correctionRef, {
-                  vendor_name: vendorName,
-                  field_name: field,
-                  original_value: String(original),
-                  corrected_value: String(corrected),
+                  vendor_name: String(vendorName).substring(0, 200),
+                  field_name: String(field).substring(0, 100),
+                  original_value: String(original).substring(0, 500),
+                  corrected_value: cleanedCorrected,
                   occurrence_count: increment(1),
                   updated_at: Date.now()
                }, { merge: true });

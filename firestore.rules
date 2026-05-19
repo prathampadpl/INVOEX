@@ -218,13 +218,15 @@ service cloud.firestore {
         // Allowed to update status, extracted data, etc.
         // Server side also has full access.
         allow update: if isSignedIn() && isValidId(orgId) && isValidId(invoiceId) && isOrgMember(orgId) &&
+                      (request.auth.uid == existing().uploadedBy || isOrgAdmin(orgId)) &&
                       isValidInvoice(incoming(), orgId) &&
                       incoming().orgId == existing().orgId &&
                       incoming().uploadedBy == existing().uploadedBy &&
                       incoming().uploadedAt == existing().uploadedAt &&
                       incoming().fileName == existing().fileName; // Never change file metadata
                       
-        allow delete: if isSignedIn() && isValidId(orgId) && isValidId(invoiceId) && isOrgMember(orgId);
+        allow delete: if isSignedIn() && isValidId(orgId) && isValidId(invoiceId) && isOrgMember(orgId) &&
+                      (request.auth.uid == existing().uploadedBy || isOrgAdmin(orgId));
       }
 
       match /corrections_log/{correctionId} {
@@ -247,17 +249,17 @@ service cloud.firestore {
       match /rules/{ruleId} {
         allow read, list: if isSignedIn() && isValidId(orgId) && isOrgMember(orgId);
         
-        allow create: if isSignedIn() && isValidId(orgId) && isValidId(ruleId) && isOrgMember(orgId) &&
+        allow create: if isSignedIn() && isValidId(orgId) && isValidId(ruleId) && isOrgAdmin(orgId) &&
                       isValidCorrectionRule(incoming(), orgId);
                       
-        allow update: if isSignedIn() && isValidId(orgId) && isValidId(ruleId) && isOrgMember(orgId) &&
+        allow update: if isSignedIn() && isValidId(orgId) && isValidId(ruleId) && isOrgAdmin(orgId) &&
                       isValidCorrectionRule(incoming(), orgId) &&
                       incoming().orgId == existing().orgId &&
                       incoming().createdBy == existing().createdBy &&
                       incoming().createdAt == existing().createdAt &&
                       incoming().diff(existing()).affectedKeys().hasOnly(['conditionField', 'conditionOperator', 'conditionValue', 'actionField', 'actionValue', 'updatedAt']);
                       
-        allow delete: if isSignedIn() && isValidId(orgId) && isValidId(ruleId) && isOrgMember(orgId);
+        allow delete: if isSignedIn() && isValidId(orgId) && isValidId(ruleId) && isOrgAdmin(orgId);
       }
     }
   }
