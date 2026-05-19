@@ -4,17 +4,29 @@ import { getFirestore, initializeFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-// Force Vite cache invalidation
-export const app = initializeApp(firebaseConfig);
-const databaseId = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)'
-  ? firebaseConfig.firestoreDatabaseId
-  : undefined;
+export let app: any = null;
+export let db: any = null;
+export let auth: any = null;
+export let storage: any = null;
+export let initError: string | null = null;
 
-export const db = databaseId
-  ? initializeFirestore(app, { experimentalForceLongPolling: true }, databaseId)
-  : initializeFirestore(app, { experimentalForceLongPolling: true });
-export const auth = getAuth(app);
-export const storage = getStorage(app);
+try {
+  app = initializeApp(firebaseConfig);
+  
+  const databaseId = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)'
+    ? firebaseConfig.firestoreDatabaseId
+    : undefined;
+
+  db = databaseId
+    ? initializeFirestore(app, { experimentalForceLongPolling: true }, databaseId)
+    : initializeFirestore(app, { experimentalForceLongPolling: true });
+    
+  auth = getAuth(app);
+  storage = getStorage(app);
+} catch (e: any) {
+  console.error("Firebase initialization failed:", e);
+  initError = e?.message || String(e);
+}
 
 export enum OperationType {
   CREATE = 'create',

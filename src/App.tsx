@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from '@/components/ui/sonner';
-import { auth, db } from '@/src/lib/firebase';
+import { auth, db, initError } from '@/src/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { useAuth } from '@/src/lib/store';
@@ -22,6 +22,10 @@ export default function App() {
   const { setUser, setOrgInfo, setLoaded, isLoaded, user } = useAuth();
 
   useEffect(() => {
+    if (initError || !auth) {
+      setLoaded(true);
+      return;
+    }
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
@@ -60,6 +64,19 @@ export default function App() {
     });
     return unsub;
   }, []);
+
+  if (initError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#FDFDFD] font-sans p-6">
+        <div className="max-w-md w-full p-8 bg-white border rounded-xl shadow-sm space-y-4 text-center">
+          <div className="w-12 h-12 bg-red-50 text-red-600 rounded-full flex items-center justify-center text-xl font-bold mx-auto">!</div>
+          <h2 className="text-xl font-bold text-gray-900">Configuration Error</h2>
+          <p className="text-gray-600 text-sm">{initError}</p>
+          <p className="text-xs text-gray-400">Ensure your VITE_FIREBASE_API_KEY and other Firebase variables are set in your environment.</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!isLoaded) {
     return <div className="min-h-screen flex items-center justify-center font-sans">Loading...</div>;
