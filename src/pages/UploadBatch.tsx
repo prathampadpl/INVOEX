@@ -244,12 +244,12 @@ export default function UploadBatch() {
             const freshRef = doc(collection(db, `organizations/${orgId}/invoices`));
             await setDoc(freshRef, {
               orgId,
-              fileName: file.name,
-              fileUrl,
               fileType: file.type,
               uploadedBy: auth.currentUser?.email || 'unknown',
               uploadedAt: Date.now(),
               ...processedData,
+              fileName: processedData.fileName || file.name,
+              fileUrl: processedData.fileUrl || fileUrl,
               status: processedData.validationErrors?.length ? 'Ready for Review' : 'Approved',
             });
           }

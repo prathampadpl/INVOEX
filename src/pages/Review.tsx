@@ -386,6 +386,76 @@ export default function Review() {
       }
 
       await updateDoc(docRef, { ...editData, status });
+
+      // Propagation logic: apply corrected values to other invoices with the same vendor (both unverified & approved)
+      const fieldsToPropagate = [
+        'vendorName', 'vendorGSTIN', 'buyerName', 'buyerGSTIN', 'gstRate'
+      ];
+      
+      const propagationUpdates: Record<string, { original: any, corrected: any }> = {};
+      for (const field of fieldsToPropagate) {
+        const original = invoice?.[field];
+        const corrected = editData?.[field];
+        if (original !== undefined && corrected !== undefined && original !== corrected && String(corrected).trim() !== '') {
+          propagationUpdates[field] = { original, corrected };
+        }
+      }
+      
+      const hasUpdates = Object.keys(propagationUpdates).length > 0;
+      if (hasUpdates) {
+        try {
+          const { getDocs, collection, query, writeBatch } = await import('firebase/firestore');
+          const invoicesColl = collection(db, `organizations/${orgId}/invoices`);
+          const q = query(invoicesColl);
+          const querySnapshot = await getDocs(q);
+          const batch = writeBatch(db);
+          let matchCount = 0;
+          
+          const currentVendor = (invoice?.vendorName || '').toLowerCase().trim();
+          const newVendor = (editData?.vendorName || '').toLowerCase().trim();
+          const currentGSTIN = (invoice?.vendorGSTIN || '').trim();
+          
+          querySnapshot.forEach((document) => {
+            if (document.id === id) return;
+            
+            const data = document.data();
+            const targetVendor = (data.vendorName || '').toLowerCase().trim();
+            const targetGSTIN = (data.vendorGSTIN || '').trim();
+            
+            // Match invoices belonging to the same vendor context
+            const isSameVendor = 
+              (currentVendor && targetVendor === currentVendor) ||
+              (newVendor && targetVendor === newVendor) ||
+              (currentGSTIN && targetGSTIN === currentGSTIN);
+              
+            if (isSameVendor) {
+              const updatesToApply: Record<string, any> = {};
+              let hasMatch = false;
+              
+              for (const [field, val] of Object.entries(propagationUpdates)) {
+                if (data[field] === val.original) {
+                  updatesToApply[field] = val.corrected;
+                  hasMatch = true;
+                }
+              }
+              
+              if (hasMatch) {
+                const targetRef = doc(db, `organizations/${orgId}/invoices`, document.id);
+                batch.update(targetRef, updatesToApply);
+                matchCount++;
+              }
+            }
+          });
+          
+          if (matchCount > 0) {
+            await batch.commit();
+            toast.info(`Propagated corrections to ${matchCount} matching invoices.`);
+          }
+        } catch (propErr) {
+          console.error("Propagation failed:", propErr);
+        }
+      }
+
       toast.success('Invoice saved');
       if (nextId) {
         navigate(`/review/${nextId}`, { state: location.state });
