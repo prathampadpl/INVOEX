@@ -111,7 +111,7 @@ const extractLimiter = rateLimit({
   message: { error: "Too many extraction requests. Please try again after 15 minutes." },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, ip: false },
+  validate: { xForwardedForHeader: false, ip: false, keyGeneratorIpFallback: false },
 });
 
 const uploadsDir = path.join(os.tmpdir(), 'invoex_uploads');
