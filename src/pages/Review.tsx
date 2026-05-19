@@ -448,6 +448,15 @@ export default function Review() {
     return objectUrls[url] || null;
   };
 
+  // Revoke object URLs on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      Object.values(objectUrls).forEach(url => {
+        try { URL.revokeObjectURL(url); } catch {}
+      });
+    };
+  }, [objectUrls]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignore if user is typing in an input

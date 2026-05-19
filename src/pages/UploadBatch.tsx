@@ -18,7 +18,12 @@ export default function UploadBatch() {
   const handleFileDrop = (e: React.DragEvent) => {
     e.preventDefault();
     if (e.dataTransfer.files) {
-      let droppedFiles = Array.from(e.dataTransfer.files).filter((f: any) => f.type.startsWith('image/') || f.type === 'application/pdf');
+      const allowedTypes = ['image/', 'application/pdf', 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+      let droppedFiles = Array.from(e.dataTransfer.files).filter((f: any) => 
+        allowedTypes.some(type => f.type.startsWith(type)) ||
+        f.name.toLowerCase().endsWith('.txt') ||
+        f.name.toLowerCase().endsWith('.docx')
+      );
       if (droppedFiles.length > 100) {
         toast.warning("Maximum 100 files allowed per batch. Truncating to 100.");
         droppedFiles = droppedFiles.slice(0, 100);

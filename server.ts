@@ -18,7 +18,7 @@ import * as FileType from 'file-type';
 import fs from 'fs';
 let projectId = process.env.FIREBASE_PROJECT_ID || 'demo-project';
 
-// Try to load from local config file if env var is missing
+// Try to load projectId from local config file if env var is missing
 if (!process.env.FIREBASE_PROJECT_ID) {
   try {
     const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
@@ -32,28 +32,46 @@ if (!process.env.FIREBASE_PROJECT_ID) {
 }
 
 if (!admin.apps.length) {
-  const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
   const config: admin.AppOptions = { projectId };
 
-  if (serviceAccount) {
+  // Strategy 1: Full service account JSON blob (FIREBASE_SERVICE_ACCOUNT_JSON)
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
     try {
-      config.credential = admin.credential.cert(JSON.parse(serviceAccount));
-      console.log("[FIREBASE] Initialized with Service Account");
+      config.credential = admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON));
+      console.log("[FIREBASE] Initialized with FIREBASE_SERVICE_ACCOUNT_JSON");
     } catch (err) {
       console.error("[FIREBASE] Invalid FIREBASE_SERVICE_ACCOUNT_JSON format:", err);
     }
-  } else {
-    console.log("[FIREBASE] Initialized with Application Default Credentials (ADC)");
+  }
+  // Strategy 2: Individual credential fields — no key file download required
+  // Set FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY in Vercel env vars
+  else if (process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
+    try {
+      config.credential = admin.credential.cert({
+        projectId,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        // Vercel stores \n as literal \\n — restore actual newlines
+        privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+      });
+      console.log("[FIREBASE] Initialized with FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY");
+    } catch (err) {
+      console.error("[FIREBASE] Failed to init with individual credential fields:", err);
+    }
+  }
+  // Strategy 3: Application Default Credentials (local dev with `gcloud auth`)
+  else {
+    console.log("[FIREBASE] Initialized with Application Default Credentials (ADC) — dev mode");
   }
 
   admin.initializeApp(config);
 }
 
+
 const app = express();
 // Trust the immediate first hop proxy (AIS Ingress / Cloud Run GFE).
 // This is necessary for rate limiting to see the real client IP.
 app.set("trust proxy", 1);
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 app.use(cors({
   origin: (origin, callback) => {
@@ -88,10 +106,11 @@ app.use('/api/', globalApiLimiter);
 const extractLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes window
   max: 50, // limit each IP/user to 50 requests per windowMs
-  keyGenerator: (req) => (req as any).user?.uid || req.ip,
+  keyGenerator: (req) => (req as any).user?.uid || req.ip || 'unknown',
   message: { error: "Too many extraction requests. Please try again after 15 minutes." },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false, ip: false },
 });
 
 const uploadsDir = path.join(os.tmpdir(), 'invoex_uploads');
@@ -1176,4 +1195,11 @@ async function startServer() {
   });
 }
 
-startServer();
+// Vercel serverless: export the Express app without calling listen()
+// Local dev / production container: start the server normally
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export default app;
+
