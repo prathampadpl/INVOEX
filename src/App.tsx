@@ -5,6 +5,7 @@ import { auth, db } from '@/src/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { useAuth } from '@/src/lib/store';
+import ErrorBoundary from '@/src/components/ErrorBoundary';
 
 // Layouts & Pages
 import AuthLayout from './pages/AuthLayout';
@@ -63,25 +64,27 @@ export default function App() {
   }
 
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route element={<AuthLayout />}>
-          <Route path="/" element={<Home />} />
-          <Route path="/login" element={!user ? <Login /> : <Navigate to="/dashboard" />} />
-        </Route>
-        
-        {/* Protected Routes */}
-        <Route element={user ? <MainLayout /> : <Navigate to="/login" />}>
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/export" element={<Export />} />
-          <Route path="/upload" element={<UploadBatch />} />
-          <Route path="/review/:id" element={<Review />} />
-          <Route path="/settings" element={<Settings />} />
-        </Route>
-        
-        <Route path="*" element={<Navigate to="/" />} />
-      </Routes>
-      <Toaster />
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <Routes>
+          <Route element={<AuthLayout />}>
+            <Route path="/" element={<Home />} />
+            <Route path="/login" element={!user ? <Login /> : <Navigate to="/dashboard" />} />
+          </Route>
+          
+          {/* Protected Routes */}
+          <Route element={user ? <MainLayout /> : <Navigate to="/login" />}>
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/export" element={<Export />} />
+            <Route path="/upload" element={<UploadBatch />} />
+            <Route path="/review/:id" element={<Review />} />
+            <Route path="/settings" element={<Settings />} />
+          </Route>
+          
+          <Route path="*" element={<Navigate to="/" />} />
+        </Routes>
+        <Toaster />
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }
