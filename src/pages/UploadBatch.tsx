@@ -62,7 +62,7 @@ export default function UploadBatch() {
       setFileStatuses((current) => ({ ...current, [file.name]: status }));
     }
 
-    const processFile = async (file: File, rules: any[], correctionsLogString: string, knownVendors: string) => {
+    const processFile = async (file: File, rules: any[]) => {
       let invoiceRef: any = null;
       try {
         updateFileStatus(file, 'Uploading file...');
@@ -151,12 +151,6 @@ export default function UploadBatch() {
         }
         if (orgId) {
            formData.append('orgId', orgId);
-        }
-        if (correctionsLogString) {
-           formData.append('correctionsLog', correctionsLogString);
-        }
-        if (knownVendors) {
-           formData.append('knownVendors', knownVendors);
         }
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minutes timeout
@@ -278,53 +272,10 @@ export default function UploadBatch() {
     };
 
     let rules: any[] = [];
-    let correctionsLogString = "";
-    let knownVendorsString = "";
     try {
-      const { getDocs, collection, query, where, orderBy, limit } = await import('firebase/firestore');
+      const { getDocs, collection } = await import('firebase/firestore');
       const rulesSnap = await getDocs(collection(db, `organizations/${orgId}/rules`));
       rules = rulesSnap.docs.map(d => d.data());
-
-      try {
-        const correctionsSnap = await getDocs(
-          collection(db, `organizations/${orgId}/corrections_log`)
-        );
-        if (!correctionsSnap.empty) {
-          // Sort by occurrence_count descending, then by updated_at descending
-          const sortedDocs = correctionsSnap.docs.map(d => d.data()).sort((a, b) => {
-            if (b.occurrence_count !== a.occurrence_count) {
-               return (b.occurrence_count || 0) - (a.occurrence_count || 0);
-            }
-            return (b.updated_at || 0) - (a.updated_at || 0);
-          }).slice(0, 150);
-          
-          correctionsLogString = "\nCRITICAL CORRECTION RULES (from past human reviews - apply strictly):\n" + 
-            sortedDocs.map(r => `- If Vendor is "${r.vendor_name}" and "${r.field_name}" looks like anything similar to "${r.original_value}", you MUST CORRECT IT to "${r.corrected_value}"`).join('\n');
-        }
-      } catch (err) {
-        console.error("Failed to fetch corrections log", err);
-      }
-      
-      try {
-         const recentInvoicesSnap = await getDocs(
-           query(collection(db, `organizations/${orgId}/invoices`), where('status', '==', 'Approved'), orderBy('uploadedAt', 'desc'), limit(300))
-         );
-         
-         const vendorMap = new Map();
-         recentInvoicesSnap.forEach(doc => {
-            const data = doc.data();
-            if (data.vendorName && data.vendorGSTIN) {
-               vendorMap.set(data.vendorName, data.vendorGSTIN);
-            }
-         });
-         
-         if (vendorMap.size > 0) {
-            knownVendorsString = "\nKNOWN VENDORS (Use these to fix OCR errors if the bill looks similar to these):\n" + 
-              Array.from(vendorMap.entries()).map(([name, gstin]) => `- Name: "${name}", GSTIN: "${gstin}"`).join('\n');
-         }
-      } catch(err) {
-         console.error("Failed to fetch recent vendors", err);
-      }
     } catch (e) {
       console.error("Failed to fetch rules", e);
     }
@@ -335,7 +286,7 @@ export default function UploadBatch() {
     const workers = Array(Math.min(CONCURRENCY_LIMIT, files.length)).fill(0).map(async () => {
       while (queue.length > 0) {
         const file = queue.shift();
-        if (file) await processFile(file, rules, correctionsLogString, knownVendorsString);
+        if (file) await processFile(file, rules);
       }
     });
 

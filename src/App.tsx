@@ -37,7 +37,9 @@ export default function App() {
                   getDoc(doc(db, 'organizations', data.lastOrgId))
                 ]);
                 if (memberDoc.exists() && orgDoc.exists()) {
-                  setOrgInfo(data.lastOrgId, memberDoc.data()?.role || 'admin', orgDoc.data()?.name);
+                  const role = memberDoc.data()?.role;
+                  const validRole = ['owner', 'admin', 'member'].includes(role) ? role : 'member';
+                  setOrgInfo(data.lastOrgId, validRole, orgDoc.data()?.name);
                 } else {
                   console.error('User is no longer a member of this organization');
                   setOrgInfo(null, null);
