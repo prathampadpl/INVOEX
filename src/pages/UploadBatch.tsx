@@ -152,6 +152,12 @@ export default function UploadBatch() {
         if (orgId) {
            formData.append('orgId', orgId);
         }
+        if (correctionsLogString) {
+           formData.append('correctionsLog', correctionsLogString);
+        }
+        if (knownVendors) {
+           formData.append('knownVendors', knownVendors);
+        }
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minutes timeout
 

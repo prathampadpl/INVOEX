@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { ZoomIn, ZoomOut, RotateCcw, ExternalLink } from 'lucide-react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/src/lib/store';
 import { db, auth, handleFirestoreError, OperationType } from '@/src/lib/firebase';
@@ -399,6 +400,7 @@ export default function Review() {
 
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [objectUrls, setObjectUrls] = useState<Record<string, string>>({});
+  const [zoomScale, setZoomScale] = useState(1);
 
   useEffect(() => {
     auth.currentUser?.getIdToken().then(t => setAuthToken(t));
@@ -551,8 +553,37 @@ export default function Review() {
       
       <div className="flex-1 grid md:grid-cols-2 gap-6 min-h-0">
         <Card className="h-full flex flex-col border shadow-sm overflow-hidden">
-          <CardHeader className="py-3 px-4 border-b bg-neutral-50"><CardTitle className="text-sm font-medium">Original Document</CardTitle></CardHeader>
-          <CardContent className="flex-1 p-0 overflow-auto bg-neutral-200 flex items-center justify-center relative">
+          <CardHeader className="py-3 px-4 border-b bg-neutral-50 flex flex-row items-center justify-between">
+            <CardTitle className="text-sm font-medium">Original Document</CardTitle>
+            <div className="flex items-center gap-1">
+              {invoice.fileType !== 'application/pdf' && invoice.fileUrl && (
+                <>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-neutral-500 hover:text-neutral-900" onClick={() => setZoomScale(z => Math.max(0.5, z - 0.25))} title="Zoom Out">
+                    <ZoomOut className="h-4 w-4" />
+                  </Button>
+                  <span className="text-xs font-mono px-1 w-12 text-center text-neutral-600">{Math.round(zoomScale * 100)}%</span>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-neutral-500 hover:text-neutral-900" onClick={() => setZoomScale(z => Math.min(4, z + 0.25))} title="Zoom In">
+                    <ZoomIn className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-neutral-500 hover:text-neutral-900" onClick={() => setZoomScale(1)} title="Reset Zoom">
+                    <RotateCcw className="h-4 w-4" />
+                  </Button>
+                </>
+              )}
+              {invoice.fileUrl && getSecureUrl(invoice.fileUrl) && (
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-7 w-7 text-neutral-500 hover:text-neutral-900 border-l pl-2 rounded-none ml-1" 
+                  onClick={() => window.open(getSecureUrl(invoice.fileUrl)!, '_blank')} 
+                  title="Open original document in new tab"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="flex-1 p-0 overflow-auto bg-neutral-200 flex items-start justify-center relative min-h-0">
             {invoice.fileType === 'application/pdf' ? (
               getSecureUrl(invoice.fileUrl) ? (
                 <iframe src={`${getSecureUrl(invoice.fileUrl)}#toolbar=0`} className="w-full h-full border-0 absolute inset-0" title="Invoice" />
@@ -560,7 +591,21 @@ export default function Review() {
                 <div className="text-neutral-500">Loading document...</div>
               )
             ) : invoice.fileUrl && getSecureUrl(invoice.fileUrl) ? (
-              <img src={getSecureUrl(invoice.fileUrl)!} alt="Invoice" className="max-w-full h-auto" />
+              <div 
+                className="w-full h-full overflow-auto p-4 flex items-start justify-center"
+              >
+                <img 
+                  src={getSecureUrl(invoice.fileUrl)!} 
+                  alt="Invoice" 
+                  style={{ 
+                    width: `${zoomScale * 100}%`, 
+                    minWidth: `${zoomScale * 100}%`,
+                    height: 'auto',
+                    transition: 'width 0.15s ease-out, min-width 0.15s ease-out',
+                    objectFit: 'contain'
+                  }} 
+                />
+              </div>
             ) : (
               <div className="text-neutral-500">{invoice.fileUrl ? "Loading document..." : "No document to display"}</div>
             )}
