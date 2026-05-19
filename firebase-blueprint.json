@@ -1,0 +1,152 @@
+{
+  "entities": {
+    "Organization": {
+      "title": "Organization",
+      "description": "A business or CA firm using INVOEX",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["name", "ownerId", "createdAt"]
+    },
+    "OrgMember": {
+      "title": "Organization Member",
+      "description": "A user who is a member of an organization",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "member"] },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["email", "role", "createdAt"]
+    },
+    "User": {
+      "title": "User",
+      "description": "User profile",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "lastOrgId": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["email", "createdAt", "updatedAt"]
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "An uploaded GST invoice with extraction data",
+      "type": "object",
+      "properties": {
+        "orgId": { "type": "string" },
+        "status": { "type": "string", "enum": ["Pending", "Extracting", "Validating", "Ready for Review", "Approved", "Failed"] },
+        "fileName": { "type": "string" },
+        "fileUrl": { "type": "string" },
+        "fileType": { "type": "string" },
+        "modelVariant": { "type": "string" },
+        "uploadedBy": { "type": "string" },
+        "uploadedAt": { "type": "number" },
+        
+        "confidenceScore": { "type": "number" },
+        
+        "vendorName": { "type": "string" },
+        "vendorGSTIN": { "type": "string" },
+        "buyerGSTIN": { "type": "string" },
+        "invoiceNumber": { "type": "string" },
+        "invoiceDate": { "type": "string" },
+        "taxableAmount": { "type": "number" },
+        "cgst": { "type": "number" },
+        "sgst": { "type": "number" },
+        "igst": { "type": "number" },
+        "grandTotal": { "type": "number" },
+        "gstRate": { "type": "number" },
+        
+        "lineItems": {
+          "type": "array",
+          "items": { "type": "object" },
+          "description": "Array of line items. Each should have description, quantity, rate, amount."
+        },
+        "validationErrors": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["orgId", "status", "fileName", "uploadedBy", "uploadedAt"]
+    },
+    "CorrectionRule": {
+      "title": "Correction Rule",
+      "description": "Custom mapping/correction rule for an org",
+      "type": "object",
+      "properties": {
+        "orgId": { "type": "string" },
+        "conditionField": { "type": "string" },
+        "conditionOperator": { "type": "string", "enum": ["contains", "equals", "startsWith", "endsWith"] },
+        "conditionValue": { "type": "string" },
+        "actionField": { "type": "string" },
+        "actionValue": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["orgId", "conditionField", "conditionOperator", "conditionValue", "actionField", "actionValue", "createdBy", "createdAt", "updatedAt"]
+    },
+    "FileMetadata": {
+      "title": "File Metadata",
+      "description": "Maps filenames to organizations for access control",
+      "type": "object",
+      "properties": {
+        "orgId": { "type": "string" },
+        "uploadedBy": { "type": "string" },
+        "originalName": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["orgId", "uploadedBy", "createdAt"]
+    },
+    "Invite": {
+      "title": "Invite",
+      "description": "Invitation for a user to join an organization",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "orgId": { "type": "string" },
+        "orgName": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "cancelled"] },
+        "invitedBy": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["email", "orgId", "status", "invitedBy", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "User" },
+      "description": "User profiles"
+    },
+    "/organizations/{orgId}": {
+      "schema": { "$ref": "Organization" },
+      "description": "Organizations"
+    },
+    "/organizations/{orgId}/members/{userId}": {
+      "schema": { "$ref": "OrgMember" },
+      "description": "Members of an organization"
+    },
+    "/organizations/{orgId}/invoices/{invoiceId}": {
+      "schema": { "$ref": "Invoice" },
+      "description": "Invoices belonging to an organization"
+    },
+    "/organizations/{orgId}/rules/{ruleId}": {
+      "schema": { "$ref": "CorrectionRule" },
+      "description": "Correction rules for an organization"
+    },
+    "/fileMetadata/{filename}": {
+      "schema": { "$ref": "FileMetadata" },
+      "description": "File access control mapping"
+    },
+    "/invites/{inviteId}": {
+      "schema": { "$ref": "Invite" },
+      "description": "Global invitation records"
+    }
+  }
+}

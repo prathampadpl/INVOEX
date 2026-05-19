@@ -1,0 +1,8 @@
+{
+  "name": "INVOEX",
+  "description": "AI-powered GST invoice extraction SaaS for Indian businesses. Extracts structured data using a double-layer OCR pipeline (Tesseract/Gemini).",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
