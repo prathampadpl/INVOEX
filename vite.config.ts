@@ -13,12 +13,12 @@ export default defineConfig(({mode}) => {
   if (!fs.existsSync(configPath)) {
     const config = {
       projectId: env.VITE_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID || "gen-lang-client-00224039-a9ae1",
-      appId: env.VITE_FIREBASE_APP_ID || "",
-      apiKey: env.VITE_FIREBASE_API_KEY || "",
-      authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || `${env.VITE_FIREBASE_PROJECT_ID || "gen-lang-client-00224039-a9ae1"}.firebaseapp.com`,
-      storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || `${env.VITE_FIREBASE_PROJECT_ID || "gen-lang-client-00224039-a9ae1"}.firebasestorage.app`,
-      messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || "",
-      firestoreDatabaseId: env.VITE_FIREBASE_DATABASE_ID || "(default)"
+      appId: env.VITE_FIREBASE_APP_ID || process.env.FIREBASE_APP_ID || "1:480987045009:web:4476832e5b3856514e3330",
+      apiKey: env.VITE_FIREBASE_API_KEY || process.env.FIREBASE_API_KEY || "AIzaSyAJimW_Ys2uKl0XU1kW5PA-WbQf6nQ5Ghg",
+      authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || process.env.FIREBASE_AUTH_DOMAIN || "gen-lang-client-00224039-a9ae1.firebaseapp.com",
+      storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || process.env.FIREBASE_STORAGE_BUCKET || "gen-lang-client-00224039-a9ae1.firebasestorage.app",
+      messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || process.env.FIREBASE_MESSAGING_SENDER_ID || "480987045009",
+      firestoreDatabaseId: env.VITE_FIREBASE_DATABASE_ID || process.env.FIREBASE_DATABASE_ID || "(default)"
     };
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
   }
