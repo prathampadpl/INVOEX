@@ -1,0 +1,264 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+    
+    // Global Primitives
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { return request.auth != null; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    
+    function isOrgMember(orgId) {
+      return exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid));
+    }
+
+    function getOrgMemberRole(orgId) {
+      return get(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)).data.role;
+    }
+    
+    function isOrgAdmin(orgId) {
+      return isOrgMember(orgId) && getOrgMemberRole(orgId) == 'admin';
+    }
+
+    // Validation Helpers
+    function isValidUser(data) {
+      return data.keys().hasAll(['email', 'createdAt', 'updatedAt']) &&
+             data.email is string && data.email.size() <= 200 &&
+             data.createdAt is number && data.updatedAt is number &&
+             (data.keys().hasOnly(['email', 'createdAt', 'updatedAt', 'name', 'lastOrgId'])) &&
+             (data.get('name', '') is string && data.get('name', '').size() <= 100) &&
+             (data.get('lastOrgId', '') is string && data.get('lastOrgId', '').size() <= 128);
+    }
+    
+    function isValidOrganization(data) {
+      return data.keys().hasAll(['name', 'ownerId', 'createdAt']) &&
+             data.name is string && data.name.size() <= 100 &&
+             data.ownerId is string && data.ownerId == request.auth.uid &&
+             data.createdAt is number &&
+             data.keys().hasOnly(['name', 'ownerId', 'createdAt']);
+    }
+
+    function isValidOrgMember(data) {
+      return data.keys().hasAll(['email', 'role', 'createdAt']) &&
+             data.email is string && data.email.size() <= 200 &&
+             data.role is string && (data.role == 'admin' || data.role == 'member') &&
+             data.createdAt is number &&
+             data.keys().hasOnly(['email', 'role', 'createdAt']);
+    }
+
+    function isValidCorrectionRule(data, orgId) {
+      return data.keys().hasAll(['orgId', 'conditionField', 'conditionOperator', 'conditionValue', 'actionField', 'actionValue', 'createdBy', 'createdAt', 'updatedAt']) &&
+             data.orgId == orgId &&
+             data.conditionField is string && data.conditionField.size() <= 100 &&
+             data.conditionOperator is string && (data.conditionOperator == 'contains' || data.conditionOperator == 'equals' || data.conditionOperator == 'startsWith' || data.conditionOperator == 'endsWith') &&
+             data.conditionValue is string && data.conditionValue.size() <= 200 &&
+             data.actionField is string && data.actionField.size() <= 100 &&
+             data.actionValue is string && data.actionValue.size() <= 200 &&
+             data.createdBy is string && data.createdBy == request.auth.uid &&
+             data.createdAt is number && data.updatedAt is number &&
+             data.keys().hasOnly(['orgId', 'conditionField', 'conditionOperator', 'conditionValue', 'actionField', 'actionValue', 'createdBy', 'createdAt', 'updatedAt']);
+    }
+    
+    function isValidInvoice(data, orgId) {
+      return data.keys().hasAll(['orgId', 'status', 'fileName', 'uploadedBy', 'uploadedAt']) &&
+             data.orgId == orgId &&
+             data.status is string && (data.status == 'Pending' || data.status == 'Extracting' || data.status == 'Validating' || data.status == 'Ready for Review' || data.status == 'Approved' || data.status == 'Failed') &&
+             data.fileName is string && data.fileName.size() <= 500 &&
+             data.uploadedBy is string && data.uploadedBy == request.auth.uid &&
+             data.uploadedAt is number &&
+             (
+               !('fileUrl' in data) || (data.fileUrl is string && data.fileUrl.size() <= 2000)
+             ) &&
+             (
+               !('fileType' in data) || (data.fileType is string && data.fileType.size() <= 100)
+             ) &&
+             (
+               !('modelVariant' in data) || (data.modelVariant is string && data.modelVariant.size() <= 100)
+             ) &&
+             (
+               !('confidenceScore' in data) || (data.confidenceScore is number)
+             ) &&
+             (
+               !('vendorName' in data) || (data.vendorName is string && data.vendorName.size() <= 200)
+             ) &&
+             (
+               !('vendorGSTIN' in data) || (data.vendorGSTIN is string && data.vendorGSTIN.size() <= 100)
+             ) &&
+             (
+               !('buyerGSTIN' in data) || (data.buyerGSTIN is string && data.buyerGSTIN.size() <= 100)
+             ) &&
+             (
+               !('invoiceNumber' in data) || (data.invoiceNumber is string && data.invoiceNumber.size() <= 100)
+             ) &&
+             (
+               !('invoiceDate' in data) || (data.invoiceDate is string && data.invoiceDate.size() <= 100)
+             ) &&
+             (
+               !('taxableAmount' in data) || (data.taxableAmount is number)
+             ) &&
+             (
+               !('cgst' in data) || (data.cgst is number)
+             ) &&
+             (
+               !('sgst' in data) || (data.sgst is number)
+             ) &&
+             (
+               !('igst' in data) || (data.igst is number)
+             ) &&
+             (
+               !('grandTotal' in data) || (data.grandTotal is number)
+             ) &&
+             (
+               !('gstRate' in data) || (data.gstRate is number)
+             ) &&
+             (
+               !('lineItems' in data) || (data.lineItems is list && data.lineItems.size() <= 200)
+             ) &&
+             (
+               !('errorDetails' in data) || (data.errorDetails is string && data.errorDetails.size() <= 2000)
+             ) &&
+             (
+               !('validationErrors' in data) || (data.validationErrors is list && data.validationErrors.size() <= 60)
+             );
+    }
+
+    // Route Definitions
+    
+    match /users/{userId} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow list: if false; // No viewing all users
+      
+      allow create: if isSignedIn() && isValidId(userId) && userId == request.auth.uid &&
+                    isValidUser(incoming());
+                    
+      allow update: if isSignedIn() && userId == request.auth.uid &&
+                    isValidUser(incoming()) &&
+                    incoming().email == existing().email &&
+                    incoming().createdAt == existing().createdAt &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['name', 'lastOrgId', 'updatedAt']);
+    }
+
+    match /fileMetadata/{filename} {
+      allow read: if isSignedIn() && isOrgMember(get(/databases/$(database)/documents/fileMetadata/$(filename)).data.orgId);
+      // Only server-side or authorized logic should usually create/update these, 
+      // but if needed by client we can add more specific rules.
+      // For now, these were intended to be controlled by server.
+    }
+
+    match /invites/{inviteId} {
+      // Allow user to read invites sent to them or members of the org to see status
+      allow read: if isSignedIn() && (
+        (resource != null && request.auth.token.email.lower() == resource.data.email.lower()) || 
+        (resource != null && isOrgMember(resource.data.orgId))
+      );
+      // Allow querying invites by email (for Login.tsx check)
+      allow list: if isSignedIn() && (
+        request.query.limit <= 20 && 
+        (request.query.filters.email == request.auth.token.email.lower() || isOrgMember(request.query.filters.orgId))
+      );
+      
+      allow create: if isSignedIn() && isOrgMember(incoming().orgId) && 
+                    incoming().invitedBy == request.auth.uid &&
+                    incoming().status == 'pending' &&
+                    incoming().email is string &&
+                    incoming().email.size() <= 200;
+                    
+      allow update: if isSignedIn() && (
+                    isOrgAdmin(existing().orgId) || 
+                    (request.auth.token.email.lower() == existing().email.lower() && 
+                     incoming().diff(existing()).affectedKeys().hasOnly(['status', 'acceptedAt']))
+                  );
+
+      allow delete: if isSignedIn() && isOrgAdmin(existing().orgId);
+    }
+
+    match /organizations/{orgId} {
+      allow read: if isSignedIn() && isValidId(orgId) && isOrgMember(orgId);
+      allow list: if false; // Organizations are typically fetched by ID using lastOrgId
+      
+      allow create: if isSignedIn() && isValidId(orgId) && isValidOrganization(incoming());
+      
+      allow update: if isSignedIn() && isValidId(orgId) && isOrgAdmin(orgId) &&
+                    isValidOrganization(incoming()) &&
+                    incoming().ownerId == existing().ownerId &&
+                    incoming().createdAt == existing().createdAt &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['name']);
+                    
+      match /members/{memberId} {
+        allow read: if isSignedIn() && isValidId(orgId) && isValidId(memberId) && (isOrgMember(orgId) || request.auth.uid == memberId);
+        allow list: if isSignedIn() && isValidId(orgId) && isOrgMember(orgId);
+        
+        allow create: if isSignedIn() && isValidId(orgId) && isValidId(memberId) &&
+                      (isOrgAdmin(orgId) || (request.auth.uid == memberId && get(/databases/$(database)/documents/organizations/$(orgId)).data.ownerId == request.auth.uid)) &&
+                      isValidOrgMember(incoming());
+                      
+        allow update: if isSignedIn() && isValidId(orgId) && isValidId(memberId) &&
+                      isOrgAdmin(orgId) &&
+                      isValidOrgMember(incoming()) &&
+                      incoming().createdAt == existing().createdAt &&
+                      incoming().email == existing().email &&
+                      incoming().diff(existing()).affectedKeys().hasOnly(['role']);
+                      
+        allow delete: if isSignedIn() && isValidId(orgId) && isValidId(memberId) &&
+                      isOrgAdmin(orgId);
+      }
+
+      match /invoices/{invoiceId} {
+        allow read, list: if isSignedIn() && isValidId(orgId) && isOrgMember(orgId);
+        
+        allow create: if isSignedIn() && isValidId(orgId) && isValidId(invoiceId) && isOrgMember(orgId) &&
+                      isValidInvoice(incoming(), orgId);
+        
+        // Allowed to update status, extracted data, etc.
+        // Server side also has full access.
+        allow update: if isSignedIn() && isValidId(orgId) && isValidId(invoiceId) && isOrgMember(orgId) &&
+                      isValidInvoice(incoming(), orgId) &&
+                      incoming().orgId == existing().orgId &&
+                      incoming().uploadedBy == existing().uploadedBy &&
+                      incoming().uploadedAt == existing().uploadedAt &&
+                      incoming().fileName == existing().fileName; // Never change file metadata
+                      
+        allow delete: if isSignedIn() && isValidId(orgId) && isValidId(invoiceId) && isOrgMember(orgId);
+      }
+
+      match /corrections_log/{correctionId} {
+        allow read, list: if isSignedIn() && isValidId(orgId) && isOrgMember(orgId);
+        allow create, update: if isSignedIn() && isValidId(orgId) && isOrgMember(orgId) &&
+               (!('vendor_name' in incoming()) || incoming().vendor_name is string) &&
+               (!('field_name' in incoming()) || incoming().field_name is string) &&
+               (!('original_value' in incoming()) || incoming().original_value is string) &&
+               (!('corrected_value' in incoming()) || incoming().corrected_value is string) &&
+               (!('updated_at' in incoming()) || incoming().updated_at is number) &&
+               (!('occurrence_count' in incoming()) || incoming().occurrence_count is number);
+      }
+
+      match /export_history/{exportId} {
+        allow read, list: if isSignedIn() && isValidId(orgId) && isOrgMember(orgId);
+        allow create: if isSignedIn() && isValidId(orgId) && isOrgMember(orgId) &&
+                      incoming().orgId == orgId && incoming().userId == request.auth.uid;
+      }
+
+      match /rules/{ruleId} {
+        allow read, list: if isSignedIn() && isValidId(orgId) && isOrgMember(orgId);
+        
+        allow create: if isSignedIn() && isValidId(orgId) && isValidId(ruleId) && isOrgMember(orgId) &&
+                      isValidCorrectionRule(incoming(), orgId);
+                      
+        allow update: if isSignedIn() && isValidId(orgId) && isValidId(ruleId) && isOrgMember(orgId) &&
+                      isValidCorrectionRule(incoming(), orgId) &&
+                      incoming().orgId == existing().orgId &&
+                      incoming().createdBy == existing().createdBy &&
+                      incoming().createdAt == existing().createdAt &&
+                      incoming().diff(existing()).affectedKeys().hasOnly(['conditionField', 'conditionOperator', 'conditionValue', 'actionField', 'actionValue', 'updatedAt']);
+                      
+        allow delete: if isSignedIn() && isValidId(orgId) && isValidId(ruleId) && isOrgMember(orgId);
+      }
+    }
+  }
+}
