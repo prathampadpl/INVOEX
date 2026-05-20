@@ -71,6 +71,12 @@ export default function UploadBatch() {
     }
 
     const processFile = async (file: File, rules: any[]) => {
+      const precomputedRules = rules.map(rule => ({
+        ...rule,
+        condStr: rule.conditionValue ? String(rule.conditionValue).toLowerCase() : '',
+        isAmountAction: rule.actionField ? String(rule.actionField).toLowerCase().includes('amount') : false
+      }));
+
       let invoiceRef: any = null;
       try {
         updateFileStatus(file, 'Uploading file...');
@@ -216,20 +222,19 @@ export default function UploadBatch() {
         for (const dataItem of invoicesList) {
           let processedData = { ...dataItem };
           try {
-            for (const rule of rules) {
-               const { conditionField, conditionOperator, conditionValue, actionField, actionValue } = rule;
+            for (const rule of precomputedRules) {
+               const { conditionField, conditionOperator, actionField, actionValue, condStr, isAmountAction } = rule;
                const fieldValue = processedData[conditionField];
                if (fieldValue !== undefined) {
                  let match = false;
                  const valStr = String(fieldValue).toLowerCase();
-                 const condStr = conditionValue.toLowerCase();
                  if (conditionOperator === 'contains' && valStr.includes(condStr)) match = true;
                  if (conditionOperator === 'equals' && valStr === condStr) match = true;
                  if (conditionOperator === 'startsWith' && valStr.startsWith(condStr)) match = true;
                  if (conditionOperator === 'endsWith' && valStr.endsWith(condStr)) match = true;
                  
                  if (match) {
-                   processedData[actionField] = actionField === 'gstRate' || actionField.toLowerCase().includes('amount') ? parseFloat(actionValue) : actionValue;
+                   processedData[actionField] = actionField === 'gstRate' || isAmountAction ? parseFloat(actionValue) : actionValue;
                  }
                }
             }
