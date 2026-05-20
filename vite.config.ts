@@ -8,7 +8,8 @@ import fs from 'fs';
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   
-  // Auto-generate firebase-applet-config.json if not present
+  // Always regenerate firebase-applet-config.json from environment variables
+  // so stale/cached values with old keys are never used.
   const configPath = path.resolve(__dirname, 'firebase-applet-config.json');
   const config = {
     projectId: env.VITE_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID,
@@ -28,9 +29,8 @@ export default defineConfig(({mode}) => {
     }
   }
 
-  if (!fs.existsSync(configPath)) {
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-  }
+  // Always write (overwrite) so env var changes always take effect
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 
   return {
     plugins: [react(), tailwindcss()],
