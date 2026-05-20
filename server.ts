@@ -956,7 +956,8 @@ Return ONLY a valid JSON ARRAY. If a single invoice spans multiple pages, it MUS
     let fileUriForGemini = null;
     if (!isTextDocument && (buffer.length > 2 * 1024 * 1024 || mimetype === "application/pdf")) {
        const os = await import("os");
-       const tempPath = path.join(os.tmpdir(), "gemini_" + Date.now() + "_" + path.basename(originalname).replace(/[^a-zA-Z0-9.-]/g, '_'));
+       const uniqueId = crypto.randomBytes(16).toString("hex");
+       const tempPath = path.join(os.tmpdir(), "gemini_" + uniqueId + "_" + path.basename(originalname).replace(/[^a-zA-Z0-9.-]/g, '_'));
        fs.writeFileSync(tempPath, buffer);
        try {
           const uploadResult = await (ai.files as any).upload({ file: tempPath, mimeType: mimetype });
@@ -1157,7 +1158,8 @@ Return ONLY a valid JSON ARRAY. If a single invoice spans multiple pages, it MUS
                 copiedPages.forEach(p => chunkPdf.addPage(p));
                 const chunkBuffer = Buffer.from(await chunkPdf.save({ useObjectStreams: false }));
                 
-                const tempId = `chunk_${Date.now()}_${start}`;
+                const uniqueChunkId = crypto.randomBytes(16).toString("hex");
+                const tempId = `chunk_${uniqueChunkId}_${start}`;
                 chunkTempPath = path.join(os.tmpdir(), tempId + ".pdf");
                 fs.writeFileSync(chunkTempPath, chunkBuffer);
                 
