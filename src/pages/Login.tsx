@@ -5,10 +5,12 @@ import { doc, getDoc, writeBatch, collection, query, where, getDocs } from 'fire
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { useAuth } from '@/src/lib/store';
 
 export default function Login() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const { setOrgInfo } = useAuth();
 
   const handleLogin = async () => {
     try {
@@ -34,6 +36,24 @@ export default function Login() {
       
       const data = await response.json();
       console.log("[LOGIN] Onboarding complete, org:", data.orgId);
+      
+      // Fetch org details to sync Zustand store immediately
+      try {
+        const [memberDoc, orgDoc] = await Promise.all([
+          getDoc(doc(db, `organizations/${data.orgId}/members`, user.uid)),
+          getDoc(doc(db, 'organizations', data.orgId))
+        ]);
+        if (memberDoc.exists() && orgDoc.exists()) {
+          const role = memberDoc.data()?.role;
+          const validRole = ['owner', 'admin', 'member'].includes(role) ? role : 'member';
+          setOrgInfo(data.orgId, validRole, orgDoc.data()?.name);
+        } else {
+          setOrgInfo(data.orgId, 'owner', 'My Organization');
+        }
+      } catch (err) {
+        console.error("Failed to load org info after onboarding", err);
+        setOrgInfo(data.orgId, 'owner', 'My Organization');
+      }
       
       toast.success('Logged in successfully');
       navigate('/dashboard');
@@ -84,6 +104,29 @@ export default function Login() {
         <Button onClick={handleLogin} disabled={loading} className="w-full">
           {loading ? 'Signing in...' : 'Sign in with Google'}
         </Button>
+        {window.location.hostname === 'localhost' && (
+          <Button 
+            onClick={async () => {
+              try {
+                setLoading(true);
+                const res = await fetch('/api/dev/token?uid=qUahDEq5x6OnYaQQ9HdZwZlMV463');
+                const { token } = await res.json();
+                const { signInWithCustomToken } = await import('firebase/auth');
+                await signInWithCustomToken(auth, token);
+                toast.success('Logged in as Dev User');
+                navigate('/dashboard');
+              } catch (err: any) {
+                toast.error('Dev login failed: ' + err.message);
+              } finally {
+                setLoading(false);
+              }
+            }} 
+            variant="outline" 
+            className="w-full"
+          >
+            Dev Auto-Login
+          </Button>
+        )}
       </div>
     </div>
   );
