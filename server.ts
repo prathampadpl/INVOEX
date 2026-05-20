@@ -957,7 +957,7 @@ Return ONLY a valid JSON ARRAY. If a single invoice spans multiple pages, it MUS
     if (!isTextDocument && (buffer.length > 2 * 1024 * 1024 || mimetype === "application/pdf")) {
        const os = await import("os");
        const tempPath = path.join(os.tmpdir(), "gemini_" + Date.now() + "_" + path.basename(originalname).replace(/[^a-zA-Z0-9.-]/g, '_'));
-       fs.writeFileSync(tempPath, buffer);
+       await fs.promises.writeFile(tempPath, buffer);
        try {
           const uploadResult = await (ai.files as any).upload({ file: tempPath, mimeType: mimetype });
           fileUriForGemini = uploadResult.uri;
@@ -1159,7 +1159,7 @@ Return ONLY a valid JSON ARRAY. If a single invoice spans multiple pages, it MUS
                 
                 const tempId = `chunk_${Date.now()}_${start}`;
                 chunkTempPath = path.join(os.tmpdir(), tempId + ".pdf");
-                fs.writeFileSync(chunkTempPath, chunkBuffer);
+                await fs.promises.writeFile(chunkTempPath, chunkBuffer);
                 
                 const uploadResult = await (ai.files as any).upload({ file: chunkTempPath, mimeType: mimetype });
                 const chunkUri = uploadResult.uri;
@@ -1236,7 +1236,7 @@ Return ONLY a valid JSON ARRAY. If a single invoice spans multiple pages, it MUS
                  
                  // Secure random filename for the split file
                  const newFilename = `${crypto.randomBytes(16).toString('hex')}.pdf`;
-                 fs.writeFileSync(path.join(uploadsDir, newFilename), newPdfBytes);
+                 await fs.promises.writeFile(path.join(uploadsDir, newFilename), newPdfBytes);
                  
                  // Store ownership metadata for the split file
                  if (activeOrgId) {
