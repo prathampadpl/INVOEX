@@ -1,0 +1,6 @@
+# Ignore extracted source during Docker build — we COPY it explicitly
+_src/
+__pycache__/
+*.pyc
+*.pyo
+.env
