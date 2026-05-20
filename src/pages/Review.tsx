@@ -10,6 +10,125 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 
+// Simple Levenshtein distance for fuzzy matching
+const getDistance = (a: string, b: string) => {
+  if (!a) return b.length;
+  if (!b) return a.length;
+  // Optimization: if strings are too long, just do a prefix/contains check to avoid O(n^2) matrix
+  if (a.length > 100 || b.length > 100) {
+    return a.toLowerCase().includes(b.toLowerCase()) || b.toLowerCase().includes(a.toLowerCase()) ? 5 : 50;
+  }
+  const matrix = [];
+  for (let i = 0; i <= b.length; i++) {
+      matrix[i] = [i];
+  }
+  for (let j = 0; j <= a.length; j++) {
+      matrix[0][j] = j;
+  }
+  for (let i = 1; i <= b.length; i++) {
+      for (let j = 1; j <= a.length; j++) {
+          if (b.charAt(i - 1) == a.charAt(j - 1)) {
+              matrix[i][j] = matrix[i - 1][j - 1];
+          } else {
+              matrix[i][j] = Math.min(matrix[i - 1][j - 1] + 1, Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1));
+          }
+      }
+  }
+  return matrix[b.length][a.length];
+};
+
+const isDateInvalid = (dateStr: string | undefined): string | null => {
+  if (!dateStr) return null;
+  const regex = /^\d{4}-\d{2}-\d{2}$/;
+  if (!regex.test(dateStr)) return "Format must be YYYY-MM-DD";
+  const [y, m, d] = dateStr.split('-');
+  const dateObj = new Date(Number(y), Number(m) - 1, Number(d));
+  if (dateObj.getFullYear() !== Number(y) || dateObj.getMonth() + 1 !== Number(m) || dateObj.getDate() !== Number(d)) {
+    return "Invalid date";
+  }
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (dateObj > today) return "Date cannot be in the future";
+  return null;
+};
+
+const SuggestionInput = ({ field, label, value, options, onChange }: { field: string, label: string, value: string, options: string[], onChange: (field: string, value: string) => void }) => {
+  // Find closest match if it isn't an exact match
+  let closestMatch = "";
+  let closestDist = Infinity;
+
+  if (value && value.trim() && options.length > 0) {
+    const lowerVal = value.trim().toLowerCase();
+    // If exact case-insensitive match exists, we're good
+    const exactMatch = options.find(o => o.toLowerCase() === lowerVal);
+    if (!exactMatch) {
+       options.forEach(opt => {
+         let dist = getDistance(lowerVal, opt.toLowerCase());
+         // Give a slight boost if startsWith or contains
+         if (opt.toLowerCase().includes(lowerVal)) dist -= 1;
+         if (dist < closestDist) {
+            closestDist = dist;
+            closestMatch = opt;
+         }
+       });
+
+       // Only suggest if the distance is small relative to string length,
+       // meaning it is likely a typo and not just a different name.
+       const maxAllowedDist = Math.max(3, Math.floor(value.length * 0.4));
+       if (closestDist > maxAllowedDist) {
+          closestMatch = ""; // don't suggest
+       }
+    }
+  }
+
+  return (
+    <div className="space-y-1 relative">
+      <Label>{label}</Label>
+      <div className="relative">
+        <Input
+           value={value || ''}
+           list={`${field}-suggestions`}
+           onChange={(e) => onChange(field, e.target.value)}
+           className={closestMatch ? "border-amber-400 focus-visible:ring-amber-400" : ""}
+        />
+        <datalist id={`${field}-suggestions`}>
+           {options.map(o => <option key={o} value={o} />)}
+        </datalist>
+      </div>
+      {closestMatch && (
+         <p className="text-xs text-amber-600 bg-amber-50 p-1.5 rounded-sm border border-amber-200 shadow-sm mt-1 flex items-start gap-1">
+           <span className="mt-0.5">💡</span>
+           <span>Did you mean <button className="font-bold underline text-amber-700 hover:text-amber-900" onClick={() => onChange(field, closestMatch)}>{closestMatch}</button>?</span>
+         </p>
+      )}
+    </div>
+  );
+};
+
+const FlaggedInput = ({ field, label, value, historicalValue, onChange }: { field: string, label: string, value: string, historicalValue?: string, onChange: (field: string, value: string) => void }) => {
+  const currentVal = String(value || '').trim();
+
+  // If there's a historical correction for this field, and it differs from the current value
+  const isDiscrepancy = historicalValue !== undefined && historicalValue !== '' && currentVal !== historicalValue;
+
+  return (
+    <div className="space-y-1">
+      <Label>{label}</Label>
+      <Input
+         value={value || ''}
+         onChange={(e) => onChange(field, e.target.value)}
+         className={isDiscrepancy ? "border-amber-400 ring-1 ring-amber-400 focus-visible:ring-amber-500 bg-amber-50/50" : ""}
+      />
+      {isDiscrepancy && (
+         <p className="text-xs text-amber-600 bg-amber-50 p-1.5 rounded-sm border border-amber-200 shadow-sm mt-1 flex items-start gap-1">
+           <span className="mt-0.5">⚠️</span>
+           <span>Past correction for this vendor: <button className="font-bold underline text-amber-700 hover:text-amber-900" onClick={() => onChange(field, historicalValue)}>{historicalValue}</button></span>
+         </p>
+      )}
+    </div>
+  );
+};
+
 export default function Review() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -75,86 +194,6 @@ export default function Review() {
     
     fetchCorrections();
   }, [orgId, editData?.vendorName, invoice?.vendorName]);
-
-  // Simple Levenshtein distance for fuzzy matching
-  const getDistance = (a: string, b: string) => {
-    if (!a) return b.length;
-    if (!b) return a.length;
-    // Optimization: if strings are too long, just do a prefix/contains check to avoid O(n^2) matrix
-    if (a.length > 100 || b.length > 100) {
-      return a.toLowerCase().includes(b.toLowerCase()) || b.toLowerCase().includes(a.toLowerCase()) ? 5 : 50;
-    }
-    const matrix = [];
-    for (let i = 0; i <= b.length; i++) {
-        matrix[i] = [i];
-    }
-    for (let j = 0; j <= a.length; j++) {
-        matrix[0][j] = j;
-    }
-    for (let i = 1; i <= b.length; i++) {
-        for (let j = 1; j <= a.length; j++) {
-            if (b.charAt(i - 1) == a.charAt(j - 1)) {
-                matrix[i][j] = matrix[i - 1][j - 1];
-            } else {
-                matrix[i][j] = Math.min(matrix[i - 1][j - 1] + 1, Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1));
-            }
-        }
-    }
-    return matrix[b.length][a.length];
-  };
-
-  const SuggestionInput = ({ field, label, value, options }: { field: string, label: string, value: string, options: string[] }) => {
-    // Find closest match if it isn't an exact match
-    let closestMatch = "";
-    let closestDist = Infinity;
-    
-    if (value && value.trim() && options.length > 0) {
-      const lowerVal = value.trim().toLowerCase();
-      // If exact case-insensitive match exists, we're good
-      const exactMatch = options.find(o => o.toLowerCase() === lowerVal);
-      if (!exactMatch) {
-         options.forEach(opt => {
-           let dist = getDistance(lowerVal, opt.toLowerCase());
-           // Give a slight boost if startsWith or contains
-           if (opt.toLowerCase().includes(lowerVal)) dist -= 1;
-           if (dist < closestDist) {
-              closestDist = dist;
-              closestMatch = opt;
-           }
-         });
-         
-         // Only suggest if the distance is small relative to string length, 
-         // meaning it is likely a typo and not just a different name.
-         const maxAllowedDist = Math.max(3, Math.floor(value.length * 0.4));
-         if (closestDist > maxAllowedDist) {
-            closestMatch = ""; // don't suggest
-         }
-      }
-    }
-
-    return (
-      <div className="space-y-1 relative">
-        <Label>{label}</Label>
-        <div className="relative">
-          <Input 
-             value={value || ''} 
-             list={`${field}-suggestions`}
-             onChange={(e) => handleChange(field, e.target.value)} 
-             className={closestMatch ? "border-amber-400 focus-visible:ring-amber-400" : ""}
-          />
-          <datalist id={`${field}-suggestions`}>
-             {options.map(o => <option key={o} value={o} />)}
-          </datalist>
-        </div>
-        {closestMatch && (
-           <p className="text-xs text-amber-600 bg-amber-50 p-1.5 rounded-sm border border-amber-200 shadow-sm mt-1 flex items-start gap-1">
-             <span className="mt-0.5">💡</span>
-             <span>Did you mean <button className="font-bold underline text-amber-700 hover:text-amber-900" onClick={() => handleChange(field, closestMatch)}>{closestMatch}</button>?</span>
-           </p>
-        )}
-      </div>
-    );
-  };
 
   useEffect(() => {
     const fetchHistory = async () => {
@@ -322,21 +361,6 @@ export default function Review() {
 
   const handleChange = (field: string, value: any) => {
     setEditData((prev: any) => ({ ...prev, [field]: value }));
-  };
-
-  const isDateInvalid = (dateStr: string | undefined): string | null => {
-    if (!dateStr) return null;
-    const regex = /^\d{4}-\d{2}-\d{2}$/;
-    if (!regex.test(dateStr)) return "Format must be YYYY-MM-DD";
-    const [y, m, d] = dateStr.split('-');
-    const dateObj = new Date(Number(y), Number(m) - 1, Number(d));
-    if (dateObj.getFullYear() !== Number(y) || dateObj.getMonth() + 1 !== Number(m) || dateObj.getDate() !== Number(d)) {
-      return "Invalid date";
-    }
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    if (dateObj > today) return "Date cannot be in the future";
-    return null;
   };
 
   const invoiceDateError = isDateInvalid(editData.invoiceDate);
@@ -537,7 +561,7 @@ export default function Review() {
   useEffect(() => {
     return () => {
       Object.values(objectUrls).forEach(url => {
-        try { URL.revokeObjectURL(url); } catch {}
+        try { URL.revokeObjectURL(url as string); } catch {}
       });
     };
   }, [objectUrls]);
@@ -577,31 +601,6 @@ export default function Review() {
 
   if (loading) return <div className="p-8">Loading...</div>;
   if (!invoice) return null;
-
-  const renderFlaggedInput = (field: string, label: string) => {
-    const histVal = vendorCorrections[field];
-    const currentVal = String(editData[field] || '').trim();
-    
-    // If there's a historical correction for this field, and it differs from the current value
-    const isDiscrepancy = histVal !== undefined && histVal !== '' && currentVal !== histVal;
-
-    return (
-      <div className="space-y-1">
-        <Label>{label}</Label>
-        <Input 
-           value={editData[field] || ''} 
-           onChange={(e) => handleChange(field, e.target.value)} 
-           className={isDiscrepancy ? "border-amber-400 ring-1 ring-amber-400 focus-visible:ring-amber-500 bg-amber-50/50" : ""}
-        />
-        {isDiscrepancy && (
-           <p className="text-xs text-amber-600 bg-amber-50 p-1.5 rounded-sm border border-amber-200 shadow-sm mt-1 flex items-start gap-1">
-             <span className="mt-0.5">⚠️</span>
-             <span>Past correction for this vendor: <button className="font-bold underline text-amber-700 hover:text-amber-900" onClick={() => handleChange(field, histVal)}>{histVal}</button></span>
-           </p>
-        )}
-      </div>
-    );
-  };
 
   return (
     <div className="h-[calc(100vh-8rem)] flex flex-col space-y-6 max-h-screen">
@@ -742,10 +741,10 @@ export default function Review() {
             )}
 
             <div className="grid grid-cols-2 gap-4">
-              <SuggestionInput field="vendorName" label="Vendor Name" value={editData.vendorName} options={historicalVendors} />
-              {renderFlaggedInput('vendorGSTIN', 'Vendor GSTIN')}
-              <SuggestionInput field="buyerName" label="Buyer Name" value={editData.buyerName} options={historicalBuyers} />
-              {renderFlaggedInput('buyerGSTIN', 'Buyer GSTIN')}
+              <SuggestionInput field="vendorName" label="Vendor Name" value={editData.vendorName} options={historicalVendors} onChange={handleChange} />
+              <FlaggedInput field="vendorGSTIN" label="Vendor GSTIN" value={editData.vendorGSTIN} historicalValue={vendorCorrections.vendorGSTIN} onChange={handleChange} />
+              <SuggestionInput field="buyerName" label="Buyer Name" value={editData.buyerName} options={historicalBuyers} onChange={handleChange} />
+              <FlaggedInput field="buyerGSTIN" label="Buyer GSTIN" value={editData.buyerGSTIN} historicalValue={vendorCorrections.buyerGSTIN} onChange={handleChange} />
               <div className="space-y-1">
                 <Label>Invoice Number</Label>
                 <Input value={editData.invoiceNumber || ''} onChange={(e) => handleChange('invoiceNumber', e.target.value)} />
