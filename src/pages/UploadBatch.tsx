@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/src/lib/store';
 import { auth, db, handleFirestoreError, OperationType, storage } from '@/src/lib/firebase';
-import { collection, doc, setDoc } from 'firebase/firestore';
+import { collection, doc, setDoc, writeBatch } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -213,6 +213,8 @@ export default function UploadBatch() {
         const invoicesList = Array.isArray(data) ? data : [data];
         let isFirstInList = true;
 
+        const batch = writeBatch(db);
+
         for (const dataItem of invoicesList) {
           let processedData = { ...dataItem };
           try {
@@ -244,13 +246,13 @@ export default function UploadBatch() {
           });
 
           if (isFirstInList) {
-            await setDoc(invoiceRef, {
+            batch.set(invoiceRef, {
               ...processedData,
               status: processedData.validationErrors?.length ? 'Ready for Review' : 'Approved',
             }, { merge: true });
           } else {
             const freshRef = doc(collection(db, `organizations/${orgId}/invoices`));
-            await setDoc(freshRef, {
+            batch.set(freshRef, {
               orgId,
               fileType: file.type,
               uploadedBy: auth.currentUser?.email || 'unknown',
@@ -263,6 +265,8 @@ export default function UploadBatch() {
           }
           isFirstInList = false;
         }
+
+        await batch.commit();
 
         updateFileStatus(file, `Completed Successfully (${invoicesList.length})`);
         incrementProgress(true);
