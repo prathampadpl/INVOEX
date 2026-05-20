@@ -1212,6 +1212,13 @@ Return ONLY a valid JSON ARRAY. If a single invoice spans multiple pages, it MUS
         const pdfDoc = await PDFDocument.load(buffer);
         const totalPages = pdfDoc.getPageCount();
 
+        let batch: any = null;
+        let hasBatchedWrites = false;
+
+        if (activeOrgId) {
+          batch = admin.firestore().batch();
+        }
+
         for (let i = 0; i < parsed.length; i++) {
           const inv = parsed[i];
           if (inv.pages && Array.isArray(inv.pages) && inv.pages.length > 0) {
@@ -1239,13 +1246,15 @@ Return ONLY a valid JSON ARRAY. If a single invoice spans multiple pages, it MUS
                  fs.writeFileSync(path.join(uploadsDir, newFilename), newPdfBytes);
                  
                  // Store ownership metadata for the split file
-                 if (activeOrgId) {
-                   await admin.firestore().doc(`fileMetadata/${newFilename}`).set({
+                 if (activeOrgId && batch) {
+                   const docRef = admin.firestore().doc(`fileMetadata/${newFilename}`);
+                   batch.set(docRef, {
                      orgId: activeOrgId,
                      uploadedBy: user.uid,
                      originalName: `Split_${i+1}${pageSuffix}_${originalname}`,
                      createdAt: Date.now()
                    });
+                   hasBatchedWrites = true;
                  }
                  
                  inv.fileUrl = `/api/files/${newFilename}`;
@@ -1255,6 +1264,10 @@ Return ONLY a valid JSON ARRAY. If a single invoice spans multiple pages, it MUS
               console.error("Split error for item", i, err);
             }
           }
+        }
+
+        if (hasBatchedWrites && batch) {
+          await batch.commit();
         }
       } catch (err) { }
     }
