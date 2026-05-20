@@ -15,15 +15,23 @@ export default function UploadBatch() {
   const [isUploading, setIsUploading] = useState(false);
   const [progress, setProgress] = useState(0);
 
+  const isSupportedInvoiceFile = (file: File) => {
+    const fileType = file.type || '';
+    const fileName = file.name.toLowerCase();
+    return (
+      fileType.startsWith('image/') ||
+      fileType === 'application/pdf' ||
+      fileType === 'text/plain' ||
+      fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+      fileName.endsWith('.txt') ||
+      fileName.endsWith('.docx')
+    );
+  };
+
   const handleFileDrop = (e: React.DragEvent) => {
     e.preventDefault();
     if (e.dataTransfer.files) {
-      const allowedTypes = ['image/', 'application/pdf', 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-      let droppedFiles = Array.from(e.dataTransfer.files).filter((f: any) => 
-        allowedTypes.some(type => f.type.startsWith(type)) ||
-        f.name.toLowerCase().endsWith('.txt') ||
-        f.name.toLowerCase().endsWith('.docx')
-      );
+      let droppedFiles = Array.from(e.dataTransfer.files).filter(isSupportedInvoiceFile);
       if (droppedFiles.length > 100) {
         toast.warning("Maximum 100 files allowed per batch. Truncating to 100.");
         droppedFiles = droppedFiles.slice(0, 100);
@@ -34,7 +42,7 @@ export default function UploadBatch() {
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      let selectedFiles = Array.from(e.target.files).filter((f: any) => f.type.startsWith('image/') || f.type === 'application/pdf');
+      let selectedFiles = Array.from(e.target.files).filter(isSupportedInvoiceFile);
       if (selectedFiles.length > 100) {
         toast.warning("Maximum 100 files allowed per batch. Truncating to 100.");
         selectedFiles = selectedFiles.slice(0, 100);
@@ -71,6 +79,7 @@ export default function UploadBatch() {
         
         let fileId = '';
         let fileUrl = '';
+        let uploadedFilename = '';
         if (file.size > 500 * 1024) { // over 500KB gets chunked
            updateFileStatus(file, 'Uploading in chunks...');
            const CHUNK_SIZE = 500 * 1024; // 500KB chunks
@@ -102,6 +111,10 @@ export default function UploadBatch() {
              }
              if (i === totalChunks - 1) {
                 const data = await res.json();
+                if (!data.filename || !data.fileUrl) {
+                  throw new Error('Chunk upload did not return a stored file reference.');
+                }
+                uploadedFilename = data.filename;
                 fileUrl = data.fileUrl;
              }
            }
@@ -123,6 +136,7 @@ export default function UploadBatch() {
            }
            
            const data = await uploadRes.json();
+           uploadedFilename = data.filename || '';
            fileUrl = data.fileUrl;
         }
 
@@ -143,7 +157,7 @@ export default function UploadBatch() {
         // 3. Start API extraction
         const formData = new FormData();
         if (file.size > 500 * 1024) {
-           formData.append('filename', fileId); // BUG 5 FIX: send filename, not Url
+           formData.append('filename', uploadedFilename);
            formData.append('fileName', file.name);
            formData.append('fileType', file.type);
         } else {

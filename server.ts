@@ -189,6 +189,35 @@ const ai = new GoogleGenAI({
   }
 });
 
+const BINARY_UPLOAD_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+const DOCUMENT_UPLOAD_MIME_TYPES = ['text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+const SUPPORTED_UPLOAD_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg', '.webp', '.txt', '.docx'];
+const DOCX_CONTAINER_MIME_TYPES = ['application/zip', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+const PRIMARY_GEMINI_MODEL = 'gemini-2.5-flash';
+const GEMINI_MODEL_FALLBACKS = [
+  PRIMARY_GEMINI_MODEL,
+  'gemini-3.5-flash',
+  'gemini-3.1-flash-lite',
+  'gemini-2.5-flash-lite',
+  'gemini-2.5-pro',
+];
+
+const isSupportedDeclaredUpload = (mime: string, ext: string) => {
+  return (
+    BINARY_UPLOAD_MIME_TYPES.includes(mime) ||
+    DOCUMENT_UPLOAD_MIME_TYPES.includes(mime) ||
+    SUPPORTED_UPLOAD_EXTENSIONS.includes(ext)
+  );
+};
+
+const isBinaryMimeAllowedForExtension = (mime: string, ext: string) => {
+  if (ext === '.pdf') return mime === 'application/pdf';
+  if (ext === '.png') return mime === 'image/png';
+  if (ext === '.jpg' || ext === '.jpeg') return mime === 'image/jpeg';
+  if (ext === '.webp') return mime === 'image/webp';
+  return false;
+};
+
 const verifyToken = async (req: express.Request, res: express.Response, next: express.NextFunction): Promise<any> => {
   // Prevent credential exposure via query strings or logs: only allow Authorization header.
   const authHeader = req.headers.authorization;
@@ -386,13 +415,13 @@ app.post('/api/upload', verifyToken, upload.single('file'), async (req, res): Pr
     if (!isMember) return res.status(403).json({ error: 'Unauthorized org access' });
 
     const mime = req.file.mimetype;
-    if (!['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(mime)) {
+    const ext = path.extname(req.file.originalname).toLowerCase();
+    if (!isSupportedDeclaredUpload(mime, ext)) {
       if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
       return res.status(400).json({ error: 'Unsupported file type' });
     }
     
     // Generate a secure random filename to prevent enumeration
-    const ext = path.extname(req.file.originalname).toLowerCase();
     const filename = `${crypto.randomBytes(16).toString('hex')}${ext}`;
     const finalLocalPath = path.join(uploadsDir, filename);
     
@@ -456,8 +485,7 @@ app.post('/api/upload-chunk', verifyToken, upload.single('chunk'), async (req, r
     }
     
     const ext = fileName ? path.extname(fileName).toLowerCase() : '';
-    const allowedExts = ['.pdf', '.png', '.jpg', '.jpeg', '.webp'];
-    if (!allowedExts.includes(ext)) {
+    if (!SUPPORTED_UPLOAD_EXTENSIONS.includes(ext)) {
       if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
       return res.status(400).json({ error: 'Unsupported file extension' });
     }
@@ -532,8 +560,11 @@ app.post('/api/upload-chunk', verifyToken, upload.single('chunk'), async (req, r
        // MAGIC BYTE VALIDATION (OWASP A03 Mitigation) on reassembled file
        const finalBuffer = fs.readFileSync(finalPath);
        const fileTypeResult = await FileType.fromBuffer(finalBuffer);
-       const allowedMimeTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
-       if (!fileTypeResult || !allowedMimeTypes.includes(fileTypeResult.mime)) {
+       const isPlainTextFile = ext === '.txt';
+       const isDocxFile = ext === '.docx';
+       const isValidBinaryFile = fileTypeResult && isBinaryMimeAllowedForExtension(fileTypeResult.mime, ext);
+       const isValidDocxFile = isDocxFile && fileTypeResult && DOCX_CONTAINER_MIME_TYPES.includes(fileTypeResult.mime);
+       if (!isPlainTextFile && !isValidDocxFile && !isValidBinaryFile) {
           // Cleanup assembled file
           try { fs.unlinkSync(finalPath); } catch {}
           try { fs.unlinkSync(lockPath); } catch {}
@@ -643,6 +674,10 @@ app.post("/api/extract", verifyToken, extractLimiter, upload.single("file"), asy
     mimetype = req.file.mimetype;
     originalname = req.file.originalname;
     size = req.file.size;
+    const declaredMime = (mimetype || '').split(';')[0].trim();
+    const originalExt = path.extname(originalname).toLowerCase();
+    const isPlainTextUpload = originalExt === '.txt' || declaredMime === 'text/plain';
+    const isDocxUpload = originalExt === '.docx' || declaredMime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
     // MAGIC BYTE VALIDATION (OWASP A03 Mitigation) - Optimized: Read from file if available
     let detected;
@@ -652,21 +687,25 @@ app.post("/api/extract", verifyToken, extractLimiter, upload.single("file"), asy
       detected = await FileType.fromBuffer(buffer);
     }
     
-    const allowedMimeTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
-    
-    if (detected) {
-      if (!allowedMimeTypes.includes(detected.mime)) {
+    if (isPlainTextUpload) {
+      // Plain text files do not have magic bytes, so extension/MIME validation is the best signal here.
+    } else if (isDocxUpload) {
+      if (!detected || !DOCX_CONTAINER_MIME_TYPES.includes(detected.mime)) {
         if (req.file.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-        return res.status(400).json({ error: `Unsupported file type: ${detected.mime}. Only PDF, JPEG, PNG, and WebP are allowed.` });
+        return res.status(400).json({ error: "Could not verify DOCX integrity. Please upload a valid DOCX file." });
+      }
+    } else if (detected) {
+      if (!isBinaryMimeAllowedForExtension(detected.mime, originalExt)) {
+        if (req.file.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        return res.status(400).json({ error: `Unsupported file type: ${detected.mime}. Only PDF, JPEG, PNG, WebP, TXT, and DOCX are allowed.` });
       }
       // Log if there's an obvious spoofing attempt (declared MIME does not match content)
-      const declaredMime = mimetype.split(';')[0].trim();
       if (declaredMime && !declaredMime.includes('*') && declaredMime !== 'application/octet-stream' && detected.mime !== declaredMime) {
         console.warn(`[SECURITY] File type mismatch for ${originalname}: content is ${detected.mime} but declared as ${declaredMime}`);
       }
     } else {
       if (req.file.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-      return res.status(400).json({ error: "Could not verify file integrity or type. Please upload a valid PDF or image." });
+      return res.status(400).json({ error: "Could not verify file integrity or type. Please upload a valid PDF, image, TXT, or DOCX file." });
     }
 
     // Now safe to read into buffer if we didn't have it (or we always read it for Gemini anyway)
@@ -936,7 +975,7 @@ Return ONLY a valid JSON ARRAY. If a single invoice spans multiple pages, it MUS
     }
 
     let response;
-    let modelVariant = "gemini-1.5-flash"; 
+    let modelVariant = PRIMARY_GEMINI_MODEL; 
     
     const getPayload = (modelName: string) => ({
       model: modelName,
@@ -998,9 +1037,7 @@ Return ONLY a valid JSON ARRAY. If a single invoice spans multiple pages, it MUS
     let generateWithRetry = async (initialModelVariant: string): Promise<{ result: any, usedModel: string }> => {
       let modelHierarchy = [
          initialModelVariant,
-         "gemini-flash-latest",
-         "gemini-3.1-flash-lite-preview",
-         "gemini-1.5-pro-preview"
+         ...GEMINI_MODEL_FALLBACKS
       ];
       
       modelHierarchy = Array.from(new Set(modelHierarchy));
@@ -1110,7 +1147,7 @@ Return ONLY a valid JSON ARRAY. If a single invoice spans multiple pages, it MUS
                 const chunkUri = uploadResult.uri;
                 
                 const chunkPayload = {
-                  ...getPayload("gemini-1.5-flash"),
+                  ...getPayload(modelVariant),
                   contents: [{
                     role: "user",
                     parts: [
