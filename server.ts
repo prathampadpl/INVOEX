@@ -41,7 +41,9 @@ if (!admin.apps.length) {
   if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
     try {
       config.credential = admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON));
-      console.log("[FIREBASE] Initialized with FIREBASE_SERVICE_ACCOUNT_JSON");
+      if (process.env.NODE_ENV !== 'production') {
+        console.log("[FIREBASE] Initialized with FIREBASE_SERVICE_ACCOUNT_JSON");
+      }
     } catch (err) {
       console.error("[FIREBASE] Invalid FIREBASE_SERVICE_ACCOUNT_JSON format:", err);
     }
@@ -56,14 +58,18 @@ if (!admin.apps.length) {
         // Vercel stores \n as literal \\n — restore actual newlines
         privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
       });
-      console.log("[FIREBASE] Initialized with FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY");
+      if (process.env.NODE_ENV !== 'production') {
+        console.log("[FIREBASE] Initialized with FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY");
+      }
     } catch (err) {
       console.error("[FIREBASE] Failed to init with individual credential fields:", err);
     }
   }
   // Strategy 3: Application Default Credentials (local dev with `gcloud auth`)
   else {
-    console.log("[FIREBASE] Initialized with Application Default Credentials (ADC) — dev mode");
+    if (process.env.NODE_ENV !== 'production') {
+      console.log("[FIREBASE] Initialized with Application Default Credentials (ADC) — dev mode");
+    }
   }
 
   admin.initializeApp(config);
