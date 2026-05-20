@@ -5,6 +5,7 @@ import { doc, getDoc, writeBatch, collection, query, where, getDocs } from 'fire
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { useAuth } from '@/src/lib/store';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -35,6 +36,10 @@ export default function Login() {
       const data = await response.json();
       console.log("[LOGIN] Onboarding complete, org:", data.orgId);
       
+      if (data.orgId) {
+        useAuth.getState().setOrgInfo(data.orgId, data.role || 'admin', data.orgName);
+      }
+
       toast.success('Logged in successfully');
       navigate('/dashboard');
     } catch (e: any) {

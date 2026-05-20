@@ -1,7 +1,7 @@
 {
   "version": 2,
   "framework": null,
-  "buildCommand": "npx vite build",
+  "buildCommand": "node prebuild.cjs && npx vite build && npx esbuild server.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist/server.cjs",
   "outputDirectory": "dist",
   "functions": {
     "api/index.ts": {

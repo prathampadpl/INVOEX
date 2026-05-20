@@ -158,10 +158,7 @@ service cloud.firestore {
         (resource != null && isOrgMember(resource.data.orgId))
       );
       // Allow querying invites by email (for Login.tsx check)
-      allow list: if isSignedIn() && (
-        request.query.limit <= 20 && 
-        (request.query.filters.email == request.auth.token.email.lower() || isOrgMember(request.query.filters.orgId))
-      );
+      allow list: if isSignedIn();
       
       allow create: if isSignedIn() && isOrgMember(incoming().orgId) && 
                     incoming().invitedBy == request.auth.uid &&

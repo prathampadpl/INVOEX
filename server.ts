@@ -12,7 +12,6 @@ import crypto from 'crypto';
 import cors from 'cors';
 import helmet from 'helmet';
 import os from 'os';
-import * as FileType from 'file-type';
 
 // Initialize Firebase Admin
 import fs from 'fs';
@@ -260,12 +259,13 @@ app.post('/api/auth/onboarding', verifyToken, async (req, res): Promise<any> => 
     const userDoc = await userRef.get();
     
     let activeOrgId = '';
+    let roleToUse = '';
+    let orgNameToUse = '';
     
     if (!userDoc.exists) {
       console.log(`[ONBOARDING] New user detected: ${user.email} (${user.uid})`);
       const batch = admin.firestore().batch();
       let orgIdToUse = '';
-      let orgNameToUse = '';
       let isJoiningExisting = false;
 
       // Check for pending invites first
@@ -293,6 +293,7 @@ app.post('/api/auth/onboarding', verifyToken, async (req, res): Promise<any> => 
         // Default: Create new organization
         orgIdToUse = crypto.randomBytes(16).toString('hex');
         orgNameToUse = `${user.displayName || 'My'}'s Org`;
+        roleToUse = 'admin';
         
         console.log(`[ONBOARDING] Creating new org ${orgIdToUse} for ${user.email}`);
         batch.set(admin.firestore().doc(`organizations/${orgIdToUse}`), {
@@ -303,14 +304,15 @@ app.post('/api/auth/onboarding', verifyToken, async (req, res): Promise<any> => 
         
         batch.set(admin.firestore().doc(`organizations/${orgIdToUse}/members/${user.uid}`), {
           email: user.email,
-          role: 'owner', 
+          role: roleToUse,
           createdAt: Date.now()
         });
       } else {
         // Joining existing: Add as member
+        roleToUse = 'member';
         batch.set(admin.firestore().doc(`organizations/${orgIdToUse}/members/${user.uid}`), {
           email: user.email,
-          role: 'member',
+          role: roleToUse,
           createdAt: Date.now()
         });
       }
@@ -357,15 +359,27 @@ app.post('/api/auth/onboarding', verifyToken, async (req, res): Promise<any> => 
             batch.update(inviteDoc.ref, { status: 'accepted', acceptedAt: Date.now(), acceptedBy: user.uid });
             await batch.commit();
             activeOrgId = inviteOrgId;
+            roleToUse = 'member';
           } else {
             // Already a member, just expire the invite doc
             await inviteDoc.ref.update({ status: 'accepted', acceptedAt: Date.now(), acceptedBy: user.uid });
           }
         }
       }
+
+      if (!roleToUse && activeOrgId) {
+        const memberDoc = await admin.firestore().doc(`organizations/${activeOrgId}/members/${user.uid}`).get();
+        if (memberDoc.exists) {
+          roleToUse = memberDoc.data()?.role;
+        }
+        const orgDoc = await admin.firestore().doc(`organizations/${activeOrgId}`).get();
+        if (orgDoc.exists) {
+          orgNameToUse = orgDoc.data()?.name;
+        }
+      }
     }
     
-    res.json({ success: true, orgId: activeOrgId });
+    res.json({ success: true, orgId: activeOrgId, role: roleToUse, orgName: orgNameToUse });
   } catch (err: any) {
     console.error("Onboarding error:", err);
     res.status(500).json({ error: "Internal onboarding failure." });
@@ -569,7 +583,8 @@ app.post('/api/upload-chunk', verifyToken, upload.single('chunk'), async (req, r
 
        // MAGIC BYTE VALIDATION (OWASP A03 Mitigation) on reassembled file
        const finalBuffer = fs.readFileSync(finalPath);
-       const fileTypeResult = await FileType.fromBuffer(finalBuffer);
+       const { fromBuffer: fileTypeFromBuffer } = await import('file-type');
+       const fileTypeResult = await fileTypeFromBuffer(finalBuffer);
        const isPlainTextFile = ext === '.txt';
        const isDocxFile = ext === '.docx';
        const isValidBinaryFile = fileTypeResult && isBinaryMimeAllowedForExtension(fileTypeResult.mime, ext);
@@ -691,10 +706,11 @@ app.post("/api/extract", verifyToken, extractLimiter, upload.single("file"), asy
 
     // MAGIC BYTE VALIDATION (OWASP A03 Mitigation) - Optimized: Read from file if available
     let detected;
+    const { fromBuffer: fileTypeFromBuffer, fromFile: fileTypeFromFile } = await import('file-type');
     if (req.file.path) {
-      detected = await FileType.fromFile(req.file.path);
+      detected = await fileTypeFromFile(req.file.path);
     } else if (buffer) {
-      detected = await FileType.fromBuffer(buffer);
+      detected = await fileTypeFromBuffer(buffer);
     }
     
     if (isPlainTextUpload) {
