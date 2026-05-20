@@ -11,3 +11,8 @@ test.ts
 dummy.txt
 .vercel
 firebase-applet-config.json
+
+INVOEX/
+test-app.js
+test-ui.js
+test_keys.js

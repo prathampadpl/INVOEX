@@ -17,6 +17,7 @@ import UploadBatch from './pages/UploadBatch';
 import Review from './pages/Review';
 import Settings from './pages/Settings';
 import Export from './pages/Export';
+import Analytics from './pages/Analytics';
 
 export default function App() {
   const { setUser, setOrgInfo, setLoaded, isLoaded, user } = useAuth();
@@ -117,6 +118,7 @@ export default function App() {
             <Route path="/upload" element={<UploadBatch />} />
             <Route path="/review/:id" element={<Review />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/analytics" element={<Analytics />} />
           </Route>
           
           <Route path="*" element={<Navigate to="/" />} />

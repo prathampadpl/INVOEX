@@ -82,7 +82,7 @@ service cloud.firestore {
                !('modelVariant' in data) || (data.modelVariant is string && data.modelVariant.size() <= 100)
              ) &&
              (
-               !('confidenceScore' in data) || (data.confidenceScore is number)
+               !('confidenceScores' in data) || (data.confidenceScores is map)
              ) &&
              (
                !('vendorName' in data) || (data.vendorName is string && data.vendorName.size() <= 200)
@@ -92,6 +92,15 @@ service cloud.firestore {
              ) &&
              (
                !('buyerGSTIN' in data) || (data.buyerGSTIN is string && data.buyerGSTIN.size() <= 100)
+             ) &&
+             (
+               !('vendorAddress' in data) || (data.vendorAddress is string && data.vendorAddress.size() <= 500)
+             ) &&
+             (
+               !('buyerName' in data) || (data.buyerName is string && data.buyerName.size() <= 200)
+             ) &&
+             (
+               !('buyerAddress' in data) || (data.buyerAddress is string && data.buyerAddress.size() <= 500)
              ) &&
              (
                !('invoiceNumber' in data) || (data.invoiceNumber is string && data.invoiceNumber.size() <= 100)

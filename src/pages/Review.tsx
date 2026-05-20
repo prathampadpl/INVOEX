@@ -103,6 +103,19 @@ export default function Review() {
     return matrix[b.length][a.length];
   };
 
+  // Per-field confidence badge — uses the new confidenceScores map
+  const ConfidenceBadge = ({ field }: { field: string }) => {
+    const score = invoice?.confidenceScores?.[field] as number | undefined;
+    if (score === undefined) return null;
+    const color = score >= 85 ? 'emerald' : score >= 60 ? 'amber' : 'red';
+    const cls = {
+      emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      amber:   'bg-amber-50 text-amber-700 border-amber-200',
+      red:     'bg-red-50 text-red-700 border-red-200',
+    }[color];
+    return <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ml-1 ${cls}`}>{score}%</span>;
+  };
+
   const SuggestionInput = ({ field, label, value, options }: { field: string, label: string, value: string, options: string[] }) => {
     // Find closest match if it isn't an exact match
     let closestMatch = "";
@@ -354,7 +367,8 @@ export default function Review() {
 
       if (status === 'Approved') {
         const fieldsToTrack = [
-          'vendorName', 'vendorGSTIN', 'buyerName', 'buyerGSTIN', 'invoiceNumber', 'invoiceDate',
+          'vendorName', 'vendorAddress', 'vendorGSTIN', 'buyerName', 'buyerAddress', 'buyerGSTIN',
+          'invoiceNumber', 'invoiceDate', 'paymentTerms', 'dueDate',
           'taxableAmount', 'cgst', 'sgst', 'igst', 'roundOff', 'grandTotal', 'gstRate'
         ];
         
@@ -710,15 +724,16 @@ export default function Review() {
                 </div>
               )}
             </div>
-            {invoice.confidenceScore !== undefined && (
-              <span className={`text-xs font-medium px-2 py-1 rounded-full ${
-                invoice.confidenceScore > 80 ? 'bg-emerald-100 text-emerald-700' : 
-                invoice.confidenceScore > 50 ? 'bg-amber-100 text-amber-700' : 
-                'bg-red-100 text-red-700'
-              }`}>
-                {invoice.confidenceScore}% Confidence
-              </span>
-            )}
+            {(() => {
+               const scores = invoice?.confidenceScores ? Object.values(invoice.confidenceScores as Record<string, number>) : [];
+               const avg = scores.length ? Math.round(scores.reduce((a: number, b: number) => a + b, 0) / scores.length) : undefined;
+               if (avg === undefined) return null;
+               return (
+                 <span className={`text-xs font-medium px-2 py-1 rounded-full ${
+                   avg > 80 ? 'bg-emerald-100 text-emerald-700' : avg > 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
+                 }`}>{avg}% Confidence</span>
+               );
+            })()}
           </CardHeader>
           <CardContent className="flex-1 overflow-auto p-6 space-y-6">
             
@@ -742,23 +757,63 @@ export default function Review() {
             )}
 
             <div className="grid grid-cols-2 gap-4">
-              <SuggestionInput field="vendorName" label="Vendor Name" value={editData.vendorName} options={historicalVendors} />
-              {renderFlaggedInput('vendorGSTIN', 'Vendor GSTIN')}
-              <SuggestionInput field="buyerName" label="Buyer Name" value={editData.buyerName} options={historicalBuyers} />
-              {renderFlaggedInput('buyerGSTIN', 'Buyer GSTIN')}
+              <div>
+                <SuggestionInput field="vendorName" label="Vendor Name" value={editData.vendorName} options={historicalVendors} />
+                <ConfidenceBadge field="vendorName" />
+              </div>
+              <div>
+                {renderFlaggedInput('vendorGSTIN', 'Vendor GSTIN')}
+                <ConfidenceBadge field="vendorGSTIN" />
+              </div>
+              <div className="col-span-2 space-y-1">
+                <Label className="flex items-center">Vendor Address <ConfidenceBadge field="vendorAddress" /></Label>
+                <textarea
+                  rows={2}
+                  className="w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={editData.vendorAddress || ''}
+                  onChange={(e) => handleChange('vendorAddress', e.target.value)}
+                  placeholder="Vendor full address"
+                />
+              </div>
+              <div>
+                <SuggestionInput field="buyerName" label="Buyer Name" value={editData.buyerName} options={historicalBuyers} />
+                <ConfidenceBadge field="buyerName" />
+              </div>
+              <div>
+                {renderFlaggedInput('buyerGSTIN', 'Buyer GSTIN')}
+                <ConfidenceBadge field="buyerGSTIN" />
+              </div>
+              <div className="col-span-2 space-y-1">
+                <Label className="flex items-center">Buyer Address <ConfidenceBadge field="buyerAddress" /></Label>
+                <textarea
+                  rows={2}
+                  className="w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={editData.buyerAddress || ''}
+                  onChange={(e) => handleChange('buyerAddress', e.target.value)}
+                  placeholder="Buyer full address"
+                />
+              </div>
               <div className="space-y-1">
-                <Label>Invoice Number</Label>
+                <Label className="flex items-center">Invoice Number <ConfidenceBadge field="invoiceNumber" /></Label>
                 <Input value={editData.invoiceNumber || ''} onChange={(e) => handleChange('invoiceNumber', e.target.value)} />
               </div>
               <div className="space-y-1">
-                <Label>Invoice Date</Label>
-                <Input 
+                <Label className="flex items-center">Invoice Date <ConfidenceBadge field="invoiceDate" /></Label>
+                <Input
                   className={invoiceDateError ? "border-red-500 focus-visible:ring-red-500" : ""}
-                  value={editData.invoiceDate || ''} 
-                  placeholder="YYYY-MM-DD" 
-                  onChange={(e) => handleChange('invoiceDate', e.target.value)} 
+                  value={editData.invoiceDate || ''}
+                  placeholder="YYYY-MM-DD"
+                  onChange={(e) => handleChange('invoiceDate', e.target.value)}
                 />
                 {invoiceDateError && <p className="text-xs text-red-500">{invoiceDateError}</p>}
+              </div>
+              <div className="space-y-1">
+                <Label className="flex items-center">Payment Terms <ConfidenceBadge field="paymentTerms" /></Label>
+                <Input value={editData.paymentTerms || ''} onChange={(e) => handleChange('paymentTerms', e.target.value)} placeholder="e.g. Net 30" />
+              </div>
+              <div className="space-y-1">
+                <Label className="flex items-center">Due Date <ConfidenceBadge field="dueDate" /></Label>
+                <Input value={editData.dueDate || ''} placeholder="YYYY-MM-DD" onChange={(e) => handleChange('dueDate', e.target.value)} />
               </div>
             </div>
 

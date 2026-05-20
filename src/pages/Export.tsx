@@ -54,9 +54,14 @@ export default function Export() {
     const csvData = filteredInvoices.map(inv => ({
       'Invoice Number': inv.invoiceNumber || '',
       'Invoice Date': inv.invoiceDate || '',
+      'Due Date': inv.dueDate || '',
+      'Payment Terms': inv.paymentTerms || '',
       'Vendor Name': inv.vendorName || '',
       'Vendor GSTIN': inv.vendorGSTIN || '',
+      'Vendor Address': inv.vendorAddress || '',
+      'Buyer Name': inv.buyerName || '',
       'Buyer GSTIN': inv.buyerGSTIN || '',
+      'Buyer Address': inv.buyerAddress || '',
       'Taxable Amount': inv.taxableAmount || 0,
       'CGST': inv.cgst || 0,
       'SGST': inv.sgst || 0,
@@ -66,6 +71,7 @@ export default function Export() {
       'Advance Paid': inv.advancePaid || 0,
       'Balance Due': inv.balanceDue || 0,
       'Payment Mode': inv.paymentMode || '',
+      'Extraction Layer': inv.extractionLayer || inv.modelVariant || '',
     }));
 
     const csv = Papa.unparse(csvData);
