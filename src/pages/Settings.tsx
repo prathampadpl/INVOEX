@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/src/lib/store';
 import { db, handleFirestoreError, OperationType } from '@/src/lib/firebase';
-import { collection, query, onSnapshot, addDoc, deleteDoc, doc, setDoc, where } from 'firebase/firestore';
+import { collection, query, onSnapshot, deleteDoc, doc, setDoc, where } from 'firebase/firestore';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
