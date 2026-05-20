@@ -5,10 +5,12 @@ import { doc, getDoc, writeBatch, collection, query, where, getDocs } from 'fire
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { useAuth } from '../lib/store';
 
 export default function Login() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const setOrgInfo = useAuth(state => state.setOrgInfo);
 
   const handleLogin = async () => {
     try {
@@ -35,6 +37,18 @@ export default function Login() {
       const data = await response.json();
       console.log("[LOGIN] Onboarding complete, org:", data.orgId);
       
+      if (data.orgId) {
+        const [orgDoc, memberDoc] = await Promise.all([
+          getDoc(doc(db, `organizations/${data.orgId}`)),
+          getDoc(doc(db, `organizations/${data.orgId}/members/${user.uid}`))
+        ]);
+
+        const orgName = orgDoc.exists() ? orgDoc.data().name : null;
+        const orgRole = memberDoc.exists() ? memberDoc.data().role : null;
+
+        setOrgInfo(data.orgId, orgRole, orgName);
+      }
+
       toast.success('Logged in successfully');
       navigate('/dashboard');
     } catch (e: any) {

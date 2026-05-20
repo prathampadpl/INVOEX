@@ -2,7 +2,9 @@ import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore, initializeFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
-import firebaseConfig from '../../firebase-applet-config.json';
+import firebaseConfigJson from '../../firebase-applet-config.json';
+
+const firebaseConfig = firebaseConfigJson as Record<string, string | undefined>;
 
 export let app: any = null;
 export let db: any = null;

@@ -12,7 +12,6 @@ import crypto from 'crypto';
 import cors from 'cors';
 import helmet from 'helmet';
 import os from 'os';
-import * as FileType from 'file-type';
 
 // Initialize Firebase Admin
 import fs from 'fs';
@@ -303,7 +302,7 @@ app.post('/api/auth/onboarding', verifyToken, async (req, res): Promise<any> => 
         
         batch.set(admin.firestore().doc(`organizations/${orgIdToUse}/members/${user.uid}`), {
           email: user.email,
-          role: 'owner', 
+          role: 'admin',
           createdAt: Date.now()
         });
       } else {
@@ -569,7 +568,8 @@ app.post('/api/upload-chunk', verifyToken, upload.single('chunk'), async (req, r
 
        // MAGIC BYTE VALIDATION (OWASP A03 Mitigation) on reassembled file
        const finalBuffer = fs.readFileSync(finalPath);
-       const fileTypeResult = await FileType.fromBuffer(finalBuffer);
+       const { fileTypeFromBuffer } = await import('file-type');
+       const fileTypeResult = await fileTypeFromBuffer(finalBuffer);
        const isPlainTextFile = ext === '.txt';
        const isDocxFile = ext === '.docx';
        const isValidBinaryFile = fileTypeResult && isBinaryMimeAllowedForExtension(fileTypeResult.mime, ext);
@@ -691,10 +691,11 @@ app.post("/api/extract", verifyToken, extractLimiter, upload.single("file"), asy
 
     // MAGIC BYTE VALIDATION (OWASP A03 Mitigation) - Optimized: Read from file if available
     let detected;
+    const { fileTypeFromBuffer, fileTypeFromFile } = await import('file-type');
     if (req.file.path) {
-      detected = await FileType.fromFile(req.file.path);
+      detected = await fileTypeFromFile(req.file.path);
     } else if (buffer) {
-      detected = await FileType.fromBuffer(buffer);
+      detected = await fileTypeFromBuffer(buffer);
     }
     
     if (isPlainTextUpload) {

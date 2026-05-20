@@ -10,6 +10,8 @@ interface State {
 }
 
 export default class ErrorBoundary extends Component<Props, State> {
+  public state: State = { hasError: false, error: null };
+
   constructor(props: Props) {
     super(props);
     this.state = { hasError: false, error: null };

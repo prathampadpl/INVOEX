@@ -536,8 +536,8 @@ export default function Review() {
   // Revoke object URLs on unmount to prevent memory leaks
   useEffect(() => {
     return () => {
-      Object.values(objectUrls).forEach(url => {
-        try { URL.revokeObjectURL(url); } catch {}
+      Object.values(objectUrls).forEach((url: unknown) => {
+        try { URL.revokeObjectURL(url as string); } catch {}
       });
     };
   }, [objectUrls]);
