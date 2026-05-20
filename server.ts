@@ -180,14 +180,24 @@ const uploadOptions: multer.Options = {
   limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit
 };
 const upload = multer(uploadOptions);
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
-    }
+let aiClient: GoogleGenAI | null = null;
+const getAiClient = () => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error('GEMINI_API_KEY is not configured');
   }
-});
+  if (!aiClient) {
+    aiClient = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
+  }
+  return aiClient;
+};
 
 const BINARY_UPLOAD_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
 const DOCUMENT_UPLOAD_MIME_TYPES = ['text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
@@ -724,6 +734,14 @@ app.post("/api/extract", verifyToken, extractLimiter, upload.single("file"), asy
   const fileHash = crypto.createHash('sha256').update(buffer).digest('hex');
   if (processedFileHashes.has(fileHash)) {
     return res.status(409).json({ error: "Duplicate file detected. This file has already been processed to save API costs." });
+  }
+
+  let ai: GoogleGenAI;
+  try {
+    ai = getAiClient();
+  } catch (configErr: any) {
+    console.error("[AI] Gemini client configuration error:", configErr);
+    return res.status(500).json({ error: "Gemini API key is not configured." });
   }
 
     if (mimetype === "application/octet-stream" || !mimetype) {
