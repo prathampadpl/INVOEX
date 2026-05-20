@@ -15,7 +15,7 @@ export default function UploadBatch() {
   const [progress, setProgress] = useState(0);
 
   const isAllowedFile = (file: File) => {
-    const allowedExtensions = ['.pdf', '.png', '.jpg', '.jpeg', '.webp', '.txt', '.docx'];
+    const allowedExtensions = ['.pdf', '.png', '.jpg', '.jpeg', '.webp', '.heic', '.txt', '.docx'];
     const allowedMimePrefixes = ['image/', 'text/plain'];
     const allowedMimes = [
       'application/pdf',
@@ -36,9 +36,9 @@ export default function UploadBatch() {
     e.preventDefault();
     if (e.dataTransfer.files) {
       let droppedFiles = Array.from(e.dataTransfer.files).filter((f: any) => isAllowedFile(f));
-      if (droppedFiles.length > 100) {
-        toast.warning("Maximum 100 files allowed per batch. Truncating to 100.");
-        droppedFiles = droppedFiles.slice(0, 100);
+      if (droppedFiles.length > 10) {
+        toast.warning("Maximum 10 files allowed per batch (PRD §3.1). Truncating.");
+        droppedFiles = droppedFiles.slice(0, 10);
       }
       setFiles(droppedFiles);
     }
@@ -47,9 +47,9 @@ export default function UploadBatch() {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       let selectedFiles = Array.from(e.target.files).filter((f: any) => isAllowedFile(f));
-      if (selectedFiles.length > 100) {
-        toast.warning("Maximum 100 files allowed per batch. Truncating to 100.");
-        selectedFiles = selectedFiles.slice(0, 100);
+      if (selectedFiles.length > 10) {
+        toast.warning("Maximum 10 files allowed per batch (PRD §3.1). Truncating.");
+        selectedFiles = selectedFiles.slice(0, 10);
       }
       setFiles(selectedFiles);
     }
@@ -268,7 +268,7 @@ export default function UploadBatch() {
               id="file-upload" 
               className="hidden" 
               multiple 
-              accept=".pdf,image/png,image/jpeg,image/webp,.txt,.docx" 
+              accept=".pdf,image/png,image/jpeg,image/webp,image/heic,.txt,.docx" 
               onChange={handleFileSelect}
               onClick={(e) => e.stopPropagation()}
             />
@@ -276,7 +276,7 @@ export default function UploadBatch() {
               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
             </div>
             <h3 className="text-lg font-semibold">Click to upload or drag and drop</h3>
-            <p className="text-sm text-neutral-500 mt-2">PDF, PNG, JPG, WEBP, TXT, or DOCX (Max 35MB per file). Up to 100 files.</p>
+            <p className="text-sm text-neutral-500 mt-2">PDF, PNG, JPG, WEBP, HEIC, TXT, or DOCX (Max 10MB per file). Up to 10 files per batch.</p>
           </div>
 
           {files.length > 0 && (

@@ -2,14 +2,15 @@ import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/src/lib/firebase';
-import { FileText, Upload, BarChart2 } from 'lucide-react';
+import { FileText, Upload, BarChart2, Brain } from 'lucide-react';
 import { useAuth } from '@/src/lib/store';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 export default function MainLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, orgName } = useAuth();
+  const { user, orgName, orgRole } = useAuth();
+  const isAdmin = orgRole === 'owner' || orgRole === 'admin';
   
   const handleLogout = async () => {
     await signOut(auth);
@@ -19,6 +20,10 @@ export default function MainLayout() {
   const nav = [
     { name: 'Dashboard', path: '/dashboard' },
     { name: 'Export', path: '/export' },
+  ];
+
+  const adminNav = [
+    { name: 'Analytics', path: '/analytics', icon: Brain },
   ];
 
   const userInitials = user?.email ? user.email.substring(0, 2).toUpperCase() : 'U';
@@ -35,11 +40,21 @@ export default function MainLayout() {
         
         <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
           {nav.map((item) => (
-             <Link key={item.path} to={item.path} 
+             <Link key={item.path} to={item.path}
                className={`${
                  location.pathname === item.path ? 'bg-blue-50 text-blue-700 px-3 py-1.5 rounded-md' : 'text-gray-500 hover:text-gray-900 px-3 py-1.5'
                }`}
              >
+               {item.name}
+             </Link>
+          ))}
+          {isAdmin && adminNav.map((item) => (
+             <Link key={item.path} to={item.path}
+               className={`flex items-center gap-1 ${
+                 location.pathname === item.path ? 'bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-md' : 'text-gray-500 hover:text-gray-900 px-3 py-1.5'
+               }`}
+             >
+               <item.icon className="w-3.5 h-3.5" />
                {item.name}
              </Link>
           ))}
@@ -65,6 +80,7 @@ export default function MainLayout() {
             <DropdownMenuContent align="end" className="w-48">
               <div className="px-2 py-1.5 text-sm text-gray-500 truncate">{user?.email}</div>
               <DropdownMenuItem onClick={() => navigate('/settings')}>Settings</DropdownMenuItem>
+              {isAdmin && <DropdownMenuItem onClick={() => navigate('/analytics')} className="text-indigo-600 focus:bg-indigo-50">Analytics</DropdownMenuItem>}
               <DropdownMenuItem onClick={handleLogout} className="text-red-600 focus:bg-red-50">Logout</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

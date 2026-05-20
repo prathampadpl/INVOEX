@@ -11,5 +11,19 @@
   },
   "firestore": {
     "rules": "firestore.rules"
+  },
+  "hosting": {
+    "public": "dist",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "rewrites": [
+      { "source": "/api/extract", "function": "extract", "region": "us-central1" },
+      { "source": "/api/auth/onboarding", "function": "onboarding", "region": "us-central1" },
+      { "source": "/api/files/**", "function": "serveFile", "region": "us-central1" },
+      { "source": "**", "destination": "/index.html" }
+    ]
+  },
+  "functions": {
+    "source": "functions",
+    "runtime": "nodejs20"
   }
 }

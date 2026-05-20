@@ -101,7 +101,10 @@ export default function Dashboard() {
       if (inv.vendorName) {
         if (!vendors[inv.vendorName]) vendors[inv.vendorName] = { count: 0, confSum: 0 };
         vendors[inv.vendorName].count++;
-        vendors[inv.vendorName].confSum += (inv.confidenceScore || 0);
+        // Compute overall confidence from per-field confidenceScores map
+        const scores = inv.confidenceScores ? Object.values(inv.confidenceScores as Record<string, number>) : [];
+        const avgConf = scores.length ? scores.reduce((a: number, b: number) => a + b, 0) / scores.length : 0;
+        vendors[inv.vendorName].confSum += avgConf;
       }
 
       if (inv.uploadedAt) {
@@ -225,7 +228,15 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent className="flex items-end justify-between">
             <div className="text-3xl font-bold text-gray-900">
-               {invoices.length ? (invoices.reduce((a, b) => a + (b.confidenceScore || 0), 0) / invoices.length).toFixed(1) : '0.0'}%
+             {(() => {
+               const allScores = invoices.flatMap(inv => 
+                 inv.confidenceScores ? Object.values(inv.confidenceScores as Record<string, number>) : []
+               );
+               const avg = allScores.length
+                 ? (allScores.reduce((a: number, b: number) => a + b, 0) / allScores.length).toFixed(1)
+                 : '0.0';
+               return <>{avg}%</>;
+             })()}
             </div>
             <div className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">AI score</div>
           </CardContent>
@@ -405,8 +416,8 @@ export default function Dashboard() {
                 <TableHead onClick={() => handleSort('status')} className="text-[10px] font-bold text-gray-500 uppercase tracking-wider cursor-pointer group hover:text-gray-900 transition-colors">
                   Status <SortIcon column="status" />
                 </TableHead>
-                <TableHead onClick={() => handleSort('confidenceScore')} className="text-[10px] font-bold text-gray-500 uppercase tracking-wider cursor-pointer group hover:text-gray-900 transition-colors">
-                  Confidence <SortIcon column="confidenceScore" />
+                <TableHead onClick={() => handleSort('confidenceScores')} className="text-[10px] font-bold text-gray-500 uppercase tracking-wider cursor-pointer group hover:text-gray-900 transition-colors">
+                  Confidence <SortIcon column="confidenceScores" />
                 </TableHead>
                 <TableHead className="text-[10px] font-bold text-gray-500 uppercase tracking-wider text-right">Actions</TableHead>
               </TableRow>
@@ -440,11 +451,17 @@ export default function Dashboard() {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    {inv.confidenceScore !== undefined ? (
-                      <span className={`text-sm font-semibold ${inv.confidenceScore > 80 ? 'text-emerald-600' : inv.confidenceScore > 50 ? 'text-amber-600' : 'text-red-600'}`}>
-                        {inv.confidenceScore.toFixed(1)}%
-                      </span>
-                    ) : (
+                    {inv.confidenceScores ? (() => {
+                      const vals = Object.values(inv.confidenceScores as Record<string, number>);
+                      const avg = vals.length ? vals.reduce((a: number, b: number) => a + b, 0) / vals.length : 0;
+                      return (
+                        <span className={`text-sm font-semibold ${
+                          avg > 80 ? 'text-emerald-600' : avg > 50 ? 'text-amber-600' : 'text-red-600'
+                        }`}>
+                          {avg.toFixed(1)}%
+                        </span>
+                      );
+                    })() : (
                       <span className="text-gray-300">-</span>
                     )}
                   </TableCell>

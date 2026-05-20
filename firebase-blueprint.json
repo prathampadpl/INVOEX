@@ -49,11 +49,14 @@
         "uploadedBy": { "type": "string" },
         "uploadedAt": { "type": "number" },
         
-        "confidenceScore": { "type": "number" },
+        "confidenceScores": { "type": "object", "description": "Per-field confidence scores from extraction (map of field name to 0-1 score)" },
         
         "vendorName": { "type": "string" },
         "vendorGSTIN": { "type": "string" },
+        "vendorAddress": { "type": "string" },
         "buyerGSTIN": { "type": "string" },
+        "buyerName": { "type": "string" },
+        "buyerAddress": { "type": "string" },
         "invoiceNumber": { "type": "string" },
         "invoiceDate": { "type": "string" },
         "taxableAmount": { "type": "number" },
