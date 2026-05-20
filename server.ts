@@ -128,23 +128,36 @@ if (!fs.existsSync(chunkUploadsDir)) {
 }
 
 // Background task to clean up old uploaded files and chunks (older than 24 hours)
-setInterval(() => {
+setInterval(async () => {
   try {
     const oneDay = 24 * 60 * 60 * 1000;
     const now = Date.now();
     const dirsToClean = [uploadsDir, chunkUploadsDir];
     
-    dirsToClean.forEach(dir => {
-      if (!fs.existsSync(dir)) return;
-      const files = fs.readdirSync(dir);
-      files.forEach(f => {
-        const p = path.join(dir, f);
-        const stats = fs.statSync(p);
-        if (stats.isFile() && now - stats.mtimeMs > oneDay) {
-          fs.unlinkSync(p);
+    for (const dir of dirsToClean) {
+      try {
+        await fs.promises.access(dir);
+      } catch {
+        continue;
+      }
+
+      try {
+        const files = await fs.promises.readdir(dir);
+        for (const f of files) {
+          const p = path.join(dir, f);
+          try {
+            const stats = await fs.promises.stat(p);
+            if (stats.isFile() && now - stats.mtimeMs > oneDay) {
+              await fs.promises.unlink(p);
+            }
+          } catch (e) {
+            console.error(`Cleanup error for file ${p}`, e);
+          }
         }
-      });
-    });
+      } catch (e) {
+        console.error(`Cleanup error reading directory ${dir}`, e);
+      }
+    }
     
     // Clear in-memory set if it gets too large to prevent memory leak, 
     // otherwise let it persist for 24 hours to improve user experience
