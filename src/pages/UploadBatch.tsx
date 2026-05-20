@@ -213,16 +213,22 @@ export default function UploadBatch() {
         const invoicesList = Array.isArray(data) ? data : [data];
         let isFirstInList = true;
 
+        // Pre-compute lowercased condition values for rules outside the loop
+        const precomputedRules = rules.map(r => ({
+          ...r,
+          condStrLower: r.conditionValue ? String(r.conditionValue).toLowerCase() : ''
+        }));
+
         for (const dataItem of invoicesList) {
           let processedData = { ...dataItem };
           try {
-            for (const rule of rules) {
-               const { conditionField, conditionOperator, conditionValue, actionField, actionValue } = rule;
+            for (const rule of precomputedRules) {
+               const { conditionField, conditionOperator, condStrLower, actionField, actionValue } = rule;
                const fieldValue = processedData[conditionField];
                if (fieldValue !== undefined) {
                  let match = false;
                  const valStr = String(fieldValue).toLowerCase();
-                 const condStr = conditionValue.toLowerCase();
+                 const condStr = condStrLower;
                  if (conditionOperator === 'contains' && valStr.includes(condStr)) match = true;
                  if (conditionOperator === 'equals' && valStr === condStr) match = true;
                  if (conditionOperator === 'startsWith' && valStr.startsWith(condStr)) match = true;
