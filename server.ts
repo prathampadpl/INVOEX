@@ -1157,7 +1157,7 @@ Return ONLY a valid JSON ARRAY. If a single invoice spans multiple pages, it MUS
                 copiedPages.forEach(p => chunkPdf.addPage(p));
                 const chunkBuffer = Buffer.from(await chunkPdf.save({ useObjectStreams: false }));
                 
-                const tempId = `chunk_${Date.now()}_${start}`;
+                const tempId = `chunk_${Date.now()}_${start}_${crypto.randomBytes(16).toString('hex')}`;
                 chunkTempPath = path.join(os.tmpdir(), tempId + ".pdf");
                 fs.writeFileSync(chunkTempPath, chunkBuffer);
                 
