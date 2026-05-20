@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/src/lib/store';
 import { auth, db } from '@/src/lib/firebase';
-import { collection, doc, setDoc } from 'firebase/firestore';
+import { collection, doc, setDoc, getDocs } from 'firebase/firestore';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -223,7 +223,6 @@ export default function UploadBatch() {
 
     let rules: any[] = [];
     try {
-      const { getDocs, collection } = await import('firebase/firestore');
       const rulesSnap = await getDocs(collection(db, `organizations/${orgId}/rules`));
       rules = rulesSnap.docs.map(d => d.data());
     } catch (e) {
@@ -270,7 +269,8 @@ export default function UploadBatch() {
               className="hidden" 
               multiple 
               accept=".pdf,image/png,image/jpeg,image/webp,.txt,.docx" 
-              onChange={handleFileSelect} 
+              onChange={handleFileSelect}
+              onClick={(e) => e.stopPropagation()}
             />
             <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
@@ -283,7 +283,7 @@ export default function UploadBatch() {
             <div className="mt-8">
               <div className="flex items-center justify-between mb-4">
                 <h4 className="font-semibold">{files.length} file(s) selected</h4>
-                <Button onClick={processBatch} disabled={isUploading}>
+                <Button type="button" onClick={(e) => { e.preventDefault(); processBatch(); }} disabled={isUploading}>
                   {isUploading ? 'Processing...' : 'Upload & Extract'}
                 </Button>
               </div>
