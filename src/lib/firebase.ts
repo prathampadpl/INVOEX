@@ -57,7 +57,7 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   };
   
   // Log full details for debugging (will appear in browser console, but not leaked to users via UI strings)
-  console.error('[Firestore technical details]:', errInfo);
+  console.error('[Firestore technical details]:', errInfo, error);
   
   // Throw generic message to be caught by UI handlers (like toasts)
   throw new Error('An unexpected database error occurred. Please try again later.');
