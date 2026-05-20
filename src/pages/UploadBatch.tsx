@@ -283,9 +283,14 @@ export default function UploadBatch() {
             <div className="mt-8">
               <div className="flex items-center justify-between mb-4">
                 <h4 className="font-semibold">{files.length} file(s) selected</h4>
-                <Button type="button" onClick={(e) => { e.preventDefault(); processBatch(); }} disabled={isUploading}>
+                <button 
+                  type="button" 
+                  onClick={(e) => { e.preventDefault(); processBatch(); }} 
+                  disabled={isUploading}
+                  className="inline-flex items-center justify-center rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50 disabled:pointer-events-none transition-colors"
+                >
                   {isUploading ? 'Processing...' : 'Upload & Extract'}
-                </Button>
+                </button>
               </div>
               
               {isUploading && (
