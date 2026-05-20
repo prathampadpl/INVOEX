@@ -92,7 +92,15 @@ app.use(cors({
   credentials: false
 }));
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'", "https://identitytoolkit.googleapis.com", "https://securetoken.googleapis.com", "https://firestore.googleapis.com", "ws:", "wss:"],
+    },
+  },
   crossOriginEmbedderPolicy: false,
 })); 
 // Rate limiter for global API endpoint to prevent generic spam
