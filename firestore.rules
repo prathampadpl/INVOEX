@@ -231,7 +231,7 @@ service cloud.firestore {
 
       match /corrections_log/{correctionId} {
         allow read, list: if isSignedIn() && isValidId(orgId) && isOrgMember(orgId);
-        allow create, update: if isSignedIn() && isValidId(orgId) && isOrgMember(orgId) &&
+        allow create, update: if isSignedIn() && isValidId(orgId) && isOrgAdmin(orgId) &&
                (!('vendor_name' in incoming()) || incoming().vendor_name is string) &&
                (!('field_name' in incoming()) || incoming().field_name is string) &&
                (!('original_value' in incoming()) || incoming().original_value is string) &&
