@@ -1375,7 +1375,7 @@ async function startServer() {
 
 // Vercel serverless: export the Express app without calling listen()
 // Local dev / production container: start the server normally
-if (!process.env.VERCEL) {
+if (!process.env.VERCEL && process.env.NODE_ENV !== "test") {
   startServer();
 }
 
