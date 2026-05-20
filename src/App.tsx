@@ -29,33 +29,52 @@ export default function App() {
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
-        // Fetch user doc to get orgId
         try {
+          let lastOrgId = null;
           const uDoc = await getDoc(doc(db, 'users', u.uid));
           if (uDoc.exists()) {
-            const data = uDoc.data();
-            if (data.lastOrgId) {
-              try {
-                const [memberDoc, orgDoc] = await Promise.all([
-                  getDoc(doc(db, `organizations/${data.lastOrgId}/members`, u.uid)),
-                  getDoc(doc(db, 'organizations', data.lastOrgId))
-                ]);
-                if (memberDoc.exists() && orgDoc.exists()) {
-                  const role = memberDoc.data()?.role;
-                  const validRole = ['owner', 'admin', 'member'].includes(role) ? role : 'member';
-                  setOrgInfo(data.lastOrgId, validRole, orgDoc.data()?.name);
-                } else {
-                  console.error('User is no longer a member of this organization');
-                  setOrgInfo(null, null);
-                }
-              } catch (memberErr) {
-                console.error('Failed to fetch member doc or auto-fix', memberErr);
-                setOrgInfo(null, null);
+            lastOrgId = uDoc.data()?.lastOrgId;
+          }
+
+          if (!lastOrgId) {
+            console.log('[App] No user doc or lastOrgId found, calling onboarding endpoint...');
+            const idToken = await u.getIdToken();
+            const response = await fetch('/api/auth/onboarding', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${idToken}`,
+                'Content-Type': 'application/json'
               }
+            });
+            if (response.ok) {
+              const resData = await response.json();
+              lastOrgId = resData.orgId;
             }
+          }
+
+          if (lastOrgId) {
+            try {
+              const [memberDoc, orgDoc] = await Promise.all([
+                getDoc(doc(db, `organizations/${lastOrgId}/members`, u.uid)),
+                getDoc(doc(db, 'organizations', lastOrgId))
+              ]);
+              if (memberDoc.exists() && orgDoc.exists()) {
+                const role = memberDoc.data()?.role;
+                const validRole = ['owner', 'admin', 'member'].includes(role) ? role : 'member';
+                setOrgInfo(lastOrgId, validRole, orgDoc.data()?.name);
+              } else {
+                setOrgInfo(lastOrgId, 'owner', 'My Organization');
+              }
+            } catch (memberErr) {
+              console.error('Failed to fetch member/org doc, falling back', memberErr);
+              setOrgInfo(lastOrgId, 'owner', 'My Organization');
+            }
+          } else {
+            setOrgInfo(null, null);
           }
         } catch (e) {
           console.error('Failed to fetch user org', e);
+          setOrgInfo(null, null);
         }
       } else {
         setOrgInfo(null, null);

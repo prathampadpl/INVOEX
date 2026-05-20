@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/src/lib/store';
-import { auth, db, handleFirestoreError, OperationType, storage } from '@/src/lib/firebase';
+import { auth, db } from '@/src/lib/firebase';
 import { collection, doc, setDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -15,15 +14,28 @@ export default function UploadBatch() {
   const [isUploading, setIsUploading] = useState(false);
   const [progress, setProgress] = useState(0);
 
+  const isAllowedFile = (file: File) => {
+    const allowedExtensions = ['.pdf', '.png', '.jpg', '.jpeg', '.webp', '.txt', '.docx'];
+    const allowedMimePrefixes = ['image/', 'text/plain'];
+    const allowedMimes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/msword'
+    ];
+
+    const name = file.name.toLowerCase();
+    const type = file.type.toLowerCase();
+
+    const matchesExtension = allowedExtensions.some(ext => name.endsWith(ext));
+    const matchesMime = allowedMimes.includes(type) || allowedMimePrefixes.some(prefix => type.startsWith(prefix));
+
+    return matchesExtension || matchesMime;
+  };
+
   const handleFileDrop = (e: React.DragEvent) => {
     e.preventDefault();
     if (e.dataTransfer.files) {
-      const allowedTypes = ['image/', 'application/pdf', 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-      let droppedFiles = Array.from(e.dataTransfer.files).filter((f: any) => 
-        allowedTypes.some(type => f.type.startsWith(type)) ||
-        f.name.toLowerCase().endsWith('.txt') ||
-        f.name.toLowerCase().endsWith('.docx')
-      );
+      let droppedFiles = Array.from(e.dataTransfer.files).filter((f: any) => isAllowedFile(f));
       if (droppedFiles.length > 100) {
         toast.warning("Maximum 100 files allowed per batch. Truncating to 100.");
         droppedFiles = droppedFiles.slice(0, 100);
@@ -34,7 +46,7 @@ export default function UploadBatch() {
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      let selectedFiles = Array.from(e.target.files).filter((f: any) => f.type.startsWith('image/') || f.type === 'application/pdf');
+      let selectedFiles = Array.from(e.target.files).filter((f: any) => isAllowedFile(f));
       if (selectedFiles.length > 100) {
         toast.warning("Maximum 100 files allowed per batch. Truncating to 100.");
         selectedFiles = selectedFiles.slice(0, 100);
@@ -44,8 +56,14 @@ export default function UploadBatch() {
   };
 
   const processBatch = async () => {
-    if (files.length === 0) return;
-    if (!orgId) return;
+    if (files.length === 0) {
+      toast.error('No files selected for extraction.');
+      return;
+    }
+    if (!orgId) {
+      toast.error('No active organization found. Please try refreshing or re-logging.');
+      return;
+    }
     
     setIsUploading(true);
     setProgress(0);
@@ -65,120 +83,52 @@ export default function UploadBatch() {
     const processFile = async (file: File, rules: any[]) => {
       let invoiceRef: any = null;
       try {
-        updateFileStatus(file, 'Uploading file...');
-        
         const token = await auth.currentUser?.getIdToken();
-        
-        let fileId = '';
-        let fileUrl = '';
-        if (file.size > 500 * 1024) { // over 500KB gets chunked
-           updateFileStatus(file, 'Uploading in chunks...');
-           const CHUNK_SIZE = 500 * 1024; // 500KB chunks
-           const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-           fileId = Date.now().toString() + '_' + file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-           
-           for (let i = 0; i < totalChunks; i++) {
-             updateFileStatus(file, `Uploading chunk ${i + 1} of ${totalChunks}...`);
-             const start = i * CHUNK_SIZE;
-             const end = Math.min(start + CHUNK_SIZE, file.size);
-             const chunk = file.slice(start, end);
 
-             const formData = new FormData();
-             formData.append('chunk', chunk);
-             formData.append('fileId', fileId);
-             formData.append('chunkIndex', i.toString());
-             formData.append('totalChunks', totalChunks.toString());
-             formData.append('fileName', file.name);
-             formData.append('orgId', orgId);
-
-             const res = await fetch('/api/upload-chunk', {
-               method: 'POST',
-               body: formData,
-               headers: { 'Authorization': `Bearer ${token}` }
-             });
-             if (!res.ok) {
-                 const errText = await res.text();
-                 throw new Error(`Chunk upload failed: ${errText}`);
-             }
-             if (i === totalChunks - 1) {
-                const data = await res.json();
-                fileUrl = data.fileUrl;
-             }
-           }
-        } else {
-           const uploadFormData = new FormData();
-           uploadFormData.append('file', file);
-           uploadFormData.append('orgId', orgId);
-           
-           const uploadRes = await fetch('/api/upload', {
-             method: 'POST',
-             body: uploadFormData,
-             headers: { 'Authorization': `Bearer ${token}` }
-           });
-           
-           if (!uploadRes.ok) {
-              const errText = await uploadRes.text();
-              console.error("Local upload failed", errText);
-              throw new Error(`Local upload failed: ${errText}`);
-           }
-           
-           const data = await uploadRes.json();
-           fileUrl = data.fileUrl;
-        }
-
+        // Create Firestore record immediately so we can track status
         updateFileStatus(file, 'Initializing database record...');
-        // 1. Create Invoice Document Immediately
         invoiceRef = doc(collection(db, `organizations/${orgId}/invoices`));
         await setDoc(invoiceRef, {
           orgId,
           status: 'Extracting',
           fileName: file.name,
           fileType: file.type,
-          fileUrl,
+          fileUrl: '',
           uploadedBy: auth.currentUser!.uid,
           uploadedAt: Date.now()
         });
 
         updateFileStatus(file, 'AI extraction in progress... (may take up to 2 mins)');
-        // 3. Start API extraction
+
+        // Send the file directly to /api/extract in a single request.
+        // This avoids the Vercel serverless ephemeral filesystem problem where
+        // a file uploaded in one function invocation is gone by the time /api/extract runs.
         const formData = new FormData();
-        if (file.size > 500 * 1024) {
-           formData.append('filename', fileId); // BUG 5 FIX: send filename, not Url
-           formData.append('fileName', file.name);
-           formData.append('fileType', file.type);
-        } else {
-           formData.append('file', file);
-        }
+        formData.append('file', file);
         if (orgId) {
-           formData.append('orgId', orgId);
+          formData.append('orgId', orgId);
         }
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minutes timeout
+        const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minutes
 
         let data;
         try {
           const res = await fetch('/api/extract', {
             method: 'POST',
             body: formData,
-            headers: {
-               'Authorization': `Bearer ${token}`
-            },
+            headers: { 'Authorization': `Bearer ${token}` },
             signal: controller.signal
           });
           clearTimeout(timeoutId);
-          
+
           updateFileStatus(file, 'Finalizing Extraction...');
           const textRes = await res.text();
           if (!res.ok) {
             let serverError = `API returned ${res.status}: ${res.statusText}`;
             try {
               const errJson = JSON.parse(textRes);
-              if (errJson.error) {
-                serverError = errJson.error;
-              }
-              if (errJson.details) {
-                serverError += ` - ${errJson.details}`;
-              }
+              if (errJson.error) serverError = errJson.error;
+              if (errJson.details) serverError += ` - ${errJson.details}`;
             } catch (e) {
               serverError += ` - ${textRes.slice(0, 150)}...`;
             }
@@ -243,7 +193,7 @@ export default function UploadBatch() {
               uploadedAt: Date.now(),
               ...processedData,
               fileName: processedData.fileName || file.name,
-              fileUrl: processedData.fileUrl || fileUrl,
+              fileUrl: processedData.fileUrl || '',
               status: processedData.validationErrors?.length ? 'Ready for Review' : 'Approved',
             });
           }

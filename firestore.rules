@@ -23,7 +23,7 @@ service cloud.firestore {
     }
     
     function isOrgAdmin(orgId) {
-      return isOrgMember(orgId) && getOrgMemberRole(orgId) == 'admin';
+      return isOrgMember(orgId) && (getOrgMemberRole(orgId) == 'admin' || getOrgMemberRole(orgId) == 'owner');
     }
 
     // Validation Helpers

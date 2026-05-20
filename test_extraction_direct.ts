@@ -88,9 +88,10 @@ Return ONLY a valid JSON ARRAY.`;
 async function testExtraction() {
   console.log("Starting INVOEX Multimodal Extraction Pipeline Test...");
   
-  for (const file of filesToTest) {
+  for (let i = 0; i < filesToTest.length; i++) {
+    const file = filesToTest[i];
     console.log(`\n========================================`);
-    console.log(`Processing: ${file.name}`);
+    console.log(`Processing [File ${i+1}/${filesToTest.length}]: ${file.name}`);
     console.log(`Path: ${file.path}`);
     
     if (!fs.existsSync(file.path)) {
@@ -102,108 +103,122 @@ async function testExtraction() {
     const base64Data = fileBuffer.toString("base64");
     
     let success = false;
-    const models = ["gemini-2.5-flash", "gemini-2.5-pro"];
+    const models = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-2.5-flash"];
     
     for (const modelName of models) {
-      try {
-        console.log(`Sending to Gemini (${modelName})...`);
-        const response = await ai.models.generateContent({
-          model: modelName,
-          contents: [
-            {
-              role: "user",
-              parts: [
-                {
-                  inlineData: {
-                    data: base64Data,
-                    mimeType: file.mimeType
-                  }
-                },
-                { text: prompt }
-              ]
-            }
-          ],
-          config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                   vendorName: { type: Type.STRING },
-                   vendorGSTIN: { type: Type.STRING },
-                   buyerName: { type: Type.STRING },
-                   buyerGSTIN: { type: Type.STRING },
-                   invoiceNumber: { type: Type.STRING },
-                   invoiceDate: { type: Type.STRING },
-                   taxableAmount: { type: Type.NUMBER },
-                   cgst: { type: Type.NUMBER },
-                   sgst: { type: Type.NUMBER },
-                   igst: { type: Type.NUMBER },
-                   grandTotal: { type: Type.NUMBER },
-                   roundOff: { type: Type.NUMBER },
-                   gstRate: { type: Type.NUMBER },
-                   advancePaid: { type: Type.NUMBER },
-                   balanceDue: { type: Type.NUMBER },
-                   paymentMode: { type: Type.STRING },
-                   pages: {
-                     type: Type.ARRAY,
-                     items: { type: Type.INTEGER }
-                   },
-                   lineItems: {
-                      type: Type.ARRAY,
-                      items: {
-                         type: Type.OBJECT,
-                         properties: {
-                            description: { type: Type.STRING },
-                            hsnCode: { type: Type.STRING },
-                            quantity: { type: Type.NUMBER },
-                            unit: { type: Type.STRING },
-                            rate: { type: Type.NUMBER },
-                            discount: { type: Type.NUMBER },
-                            discountType: { type: Type.STRING },
-                            amount: { type: Type.NUMBER }
+      if (success) break;
+      
+      console.log(`Trying model: ${modelName}`);
+      let retries = 5;
+      let delay = 5000;
+      
+      for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+          console.log(`Attempt ${attempt} of ${retries} for ${modelName}...`);
+          const response = await ai.models.generateContent({
+            model: modelName,
+            contents: [
+              {
+                role: "user",
+                parts: [
+                  {
+                    inlineData: {
+                      data: base64Data,
+                      mimeType: file.mimeType
+                    }
+                  },
+                  { text: prompt }
+                ]
+              }
+            ],
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                     vendorName: { type: Type.STRING },
+                     vendorGSTIN: { type: Type.STRING },
+                     buyerName: { type: Type.STRING },
+                     buyerGSTIN: { type: Type.STRING },
+                     invoiceNumber: { type: Type.STRING },
+                     invoiceDate: { type: Type.STRING },
+                     taxableAmount: { type: Type.NUMBER },
+                     cgst: { type: Type.NUMBER },
+                     sgst: { type: Type.NUMBER },
+                     igst: { type: Type.NUMBER },
+                     grandTotal: { type: Type.NUMBER },
+                     roundOff: { type: Type.NUMBER },
+                     gstRate: { type: Type.NUMBER },
+                     advancePaid: { type: Type.NUMBER },
+                     balanceDue: { type: Type.NUMBER },
+                     paymentMode: { type: Type.STRING },
+                     pages: {
+                       type: Type.ARRAY,
+                       items: { type: Type.INTEGER }
+                     },
+                     lineItems: {
+                        type: Type.ARRAY,
+                        items: {
+                           type: Type.OBJECT,
+                           properties: {
+                              description: { type: Type.STRING },
+                              hsnCode: { type: Type.STRING },
+                              quantity: { type: Type.NUMBER },
+                              unit: { type: Type.STRING },
+                              rate: { type: Type.NUMBER },
+                              discount: { type: Type.NUMBER },
+                              discountType: { type: Type.STRING },
+                              amount: { type: Type.NUMBER }
+                           }
                          }
-                       }
-                    },
-                   confidenceScore: { type: Type.NUMBER },
-                   doubtfulFields: {
-                     type: Type.ARRAY,
-                     items: { type: Type.STRING }
-                   }
+                      },
+                     confidenceScore: { type: Type.NUMBER },
+                     doubtfulFields: {
+                       type: Type.ARRAY,
+                       items: { type: Type.STRING }
+                     }
+                  }
                 }
               }
             }
+          });
+          
+          const jsonText = response.text;
+          if (!jsonText) {
+            console.error("Error: Empty response text from Gemini");
+            continue;
           }
-        });
-        
-        const jsonText = response.text;
-        if (!jsonText) {
-          console.error("Error: Empty response text from Gemini");
-          continue;
+          
+          const parsed = JSON.parse(jsonText);
+          console.log(`\n🎉 Extraction Successful using ${modelName}! Result:`);
+          console.log(JSON.stringify(parsed, null, 2));
+          
+          // Save to file
+          const resultFilePath = `C:\\Users\\prath\\.gemini\\antigravity\\brain\\c538ab16-e5c8-4a90-923f-dd246004d561\\scratch\\extracted_${file.name.replace(/[^a-zA-Z0-9]/g, '_')}.json`;
+          fs.writeFileSync(resultFilePath, JSON.stringify(parsed, null, 2));
+          console.log(`Saved results to: ${resultFilePath}`);
+          
+          success = true;
+          break; // Exit retry loop on success
+          
+        } catch (err: any) {
+          console.warn(`[WARNING] Attempt ${attempt} failed: ${err.message || JSON.stringify(err)}`);
+          if (attempt < retries) {
+            console.log(`Sleeping for ${delay / 1000}s before next attempt...`);
+            await new Promise(r => setTimeout(r, delay));
+            delay *= 2; // Exponential backoff
+          }
         }
-        
-        const parsed = JSON.parse(jsonText);
-        console.log(`\n🎉 Extraction Successful using ${modelName}! Result:`);
-        console.log(JSON.stringify(parsed, null, 2));
-        
-        // Save to file
-        const resultFilePath = `C:\\Users\\prath\\.gemini\\antigravity\\brain\\c538ab16-e5c8-4a90-923f-dd246004d561\\scratch\\extracted_${file.name.replace(/[^a-zA-Z0-9]/g, '_')}.json`;
-        fs.writeFileSync(resultFilePath, JSON.stringify(parsed, null, 2));
-        console.log(`Saved results to: ${resultFilePath}`);
-        
-        success = true;
-        break; // Exit models loop on success
-        
-      } catch (err: any) {
-        console.warn(`[WARNING] Model ${modelName} failed/unavailable: ${err.message || JSON.stringify(err)}`);
-        // Add a delay before trying the next model
-        await new Promise(r => setTimeout(r, 2000));
       }
     }
     
     if (!success) {
-      console.error(`❌ Extraction failed for ${file.name} across all fallback models.`);
+      console.error(`❌ Extraction failed for ${file.name} across all models and retries.`);
+    } else {
+      console.log(`File processed successfully. Cooldown delay of 10s before next file...`);
+      await new Promise(r => setTimeout(r, 10000));
     }
   }
 }
