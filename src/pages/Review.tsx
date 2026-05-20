@@ -82,7 +82,9 @@ export default function Review() {
     if (!b) return a.length;
     // Optimization: if strings are too long, just do a prefix/contains check to avoid O(n^2) matrix
     if (a.length > 100 || b.length > 100) {
-      return a.toLowerCase().includes(b.toLowerCase()) || b.toLowerCase().includes(a.toLowerCase()) ? 5 : 50;
+      const aLower = a.toLowerCase();
+      const bLower = b.toLowerCase();
+      return aLower.includes(bLower) || bLower.includes(aLower) ? 5 : 50;
     }
     const matrix = [];
     for (let i = 0; i <= b.length; i++) {
