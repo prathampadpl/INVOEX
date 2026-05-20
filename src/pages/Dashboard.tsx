@@ -334,11 +334,13 @@ export default function Dashboard() {
               <div className="flex items-center gap-2 mr-4 border-r border-gray-200 pr-4">
                 <span className="text-sm font-medium text-gray-700">{selectedInvoices.size} selected</span>
                 <DropdownMenu>
-                  <DropdownMenuTrigger>
-                    <Button size="sm" variant="outline" className="h-9">
-                      Bulk Actions <ChevronDown className="w-4 h-4 ml-2 opacity-50" />
-                    </Button>
-                  </DropdownMenuTrigger>
+                  <DropdownMenuTrigger
+                    render={
+                      <Button size="sm" variant="outline" className="h-9">
+                        Bulk Actions <ChevronDown className="w-4 h-4 ml-2 opacity-50" />
+                      </Button>
+                    }
+                  />
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem onClick={() => handleBulkStatusChange('Approved')} className="text-emerald-700 focus:text-emerald-700 focus:bg-emerald-50">
                       Approve Selected
