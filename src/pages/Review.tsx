@@ -537,7 +537,7 @@ export default function Review() {
   useEffect(() => {
     return () => {
       Object.values(objectUrls).forEach(url => {
-        try { URL.revokeObjectURL(url); } catch {}
+        try { URL.revokeObjectURL(url as string); } catch {}
       });
     };
   }, [objectUrls]);
