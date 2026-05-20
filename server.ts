@@ -173,7 +173,7 @@ const uploadOptions: multer.Options = {
       cb(null, os.tmpdir());
     },
     filename: (req, file, cb) => {
-      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+      const uniqueSuffix = Date.now() + '-' + crypto.randomBytes(16).toString('hex');
       cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
     }
   }),
