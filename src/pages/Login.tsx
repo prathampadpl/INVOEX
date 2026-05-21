@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { auth, db } from '@/src/lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
@@ -14,6 +14,23 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const { setOrgInfo } = useAuth();
+
+  const handleResetPassword = async () => {
+    if (!email) {
+      toast.error('Please enter your email address first');
+      return;
+    }
+    try {
+      setLoading(true);
+      await sendPasswordResetEmail(auth, email);
+      toast.success('Password reset email sent! Check your inbox.');
+    } catch (e: any) {
+      console.error(e);
+      toast.error('Failed to send reset email: ' + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,7 +54,7 @@ export default function Login() {
       
       const idToken = await user.getIdToken();
       
-      const response = await fetch('/api/auth/onboarding', {
+      const response = await fetch('https://us-central1-gen-lang-client-00224039-a9ae1.cloudfunctions.net/onboarding', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${idToken}`,
@@ -138,6 +155,15 @@ export default function Login() {
           <Button type="submit" disabled={loading} className="w-full">
             {loading ? 'Processing...' : (isSignUp ? 'Sign Up' : 'Sign In')}
           </Button>
+          {!isSignUp && (
+            <button 
+              type="button" 
+              onClick={handleResetPassword}
+              className="text-primary text-sm font-medium hover:underline w-full text-center mt-2"
+            >
+              Forgot Password?
+            </button>
+          )}
         </form>
 
         <div className="text-center text-sm">

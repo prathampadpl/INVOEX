@@ -1,3 +1,4 @@
+import { onRequest } from "firebase-functions/v2/https";
 /**
  * INVOEX v2.0 — Firebase Cloud Functions
  * Senior Serverless Architecture — No Express, No persistent servers.
@@ -21,3 +22,7 @@ export {
   deleteExpiredFiles,
   getCorrectionStats,
 } from './core';
+export const testTrigger = onRequest({ region: "us-central1", timeoutSeconds: 120 }, async (req, res) => {
+  const { runPipeline } = require("./pipeline/router");
+  res.send("Pipeline imported successfully.");
+});  

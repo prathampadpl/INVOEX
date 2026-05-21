@@ -40,7 +40,7 @@ export default function App() {
           if (!lastOrgId) {
             console.log('[App] No user doc or lastOrgId found, calling onboarding endpoint...');
             const idToken = await u.getIdToken();
-            const response = await fetch('/api/auth/onboarding', {
+            const response = await fetch('https://us-central1-gen-lang-client-00224039-a9ae1.cloudfunctions.net/onboarding', {
               method: 'POST',
               headers: {
                 'Authorization': `Bearer ${idToken}`,
