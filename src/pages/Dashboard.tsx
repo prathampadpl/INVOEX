@@ -47,6 +47,10 @@ export default function Dashboard() {
   }, [orgId]);
 
   const filteredInvoices = useMemo(() => {
+    // Bolt Optimization: Hoist expensive date parsing outside the filter loop
+    const filterStartMs = filterStartDate ? new Date(filterStartDate).getTime() : null;
+    const filterEndMs = filterEndDate ? new Date(filterEndDate).getTime() + 86400000 : null;
+
     let result = invoices.filter(inv => {
       if (statusFilter !== 'All statuses' && inv.status !== statusFilter) return false;
       if (searchQuery) {
@@ -56,11 +60,11 @@ export default function Dashboard() {
         }
       }
       
-      if (filterStartDate) {
-        if (inv.uploadedAt && inv.uploadedAt < new Date(filterStartDate).getTime()) return false;
+      if (filterStartMs) {
+        if (inv.uploadedAt && inv.uploadedAt < filterStartMs) return false;
       }
-      if (filterEndDate) {
-        if (inv.uploadedAt && inv.uploadedAt > new Date(filterEndDate).getTime() + 86400000) return false;
+      if (filterEndMs) {
+        if (inv.uploadedAt && inv.uploadedAt > filterEndMs) return false;
       }
 
       return true;

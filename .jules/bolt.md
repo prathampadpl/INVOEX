@@ -1,0 +1,3 @@
+## 2024-05-21 - [Hoist Expensive Date Parsing Outside Iterations]
+**Learning:** Found a common performance bottleneck in React applications using `useMemo` hooks with array operations. Instantiating `new Date()` and calling `.getTime()` inside an `.filter()` or `.map()` loop recalculates the same values unnecessarily. This operates at O(N) complexity for something that should be calculated once per render.
+**Action:** Always check array iteration methods for constant operations (such as static date boundaries parsing) and hoist them outside the loop to execute in O(1) time before looping through the dataset.
