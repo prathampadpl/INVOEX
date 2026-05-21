@@ -135,7 +135,7 @@ export default function UploadBatch() {
     if (!orgId) { toast.error('No active organization. Try refreshing.'); return; }
 
     setIsUploading(true);
-    setProgress(0);
+    setProgress(5);
     let done = 0, failed = 0;
 
     let rules: any[] = [];
@@ -153,7 +153,7 @@ export default function UploadBatch() {
         failed++;
       }
       done++;
-      setProgress((done / files.length) * 100);
+      setProgress(5 + (done / files.length) * 95);
     }
 
     setIsUploading(false);
