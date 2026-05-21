@@ -2,12 +2,14 @@ import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore, initializeFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
+import { getFunctions } from 'firebase/functions';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 export let app: any = null;
 export let db: any = null;
 export let auth: any = null;
 export let storage: any = null;
+export let functions: any = null;
 export let initError: string | null = null;
 
 try {
@@ -23,6 +25,7 @@ try {
     
   auth = getAuth(app);
   storage = getStorage(app);
+  functions = getFunctions(app, 'us-central1');
 } catch (e: any) {
   console.error("Firebase initialization failed:", e);
   initError = e?.message || String(e);

@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/src/lib/store';
-import { auth, db } from '@/src/lib/firebase';
+import { auth, db, storage, functions } from '@/src/lib/firebase';
 import { collection, doc, getDoc, getDocs, setDoc } from 'firebase/firestore';
+import { ref, uploadBytes } from 'firebase/storage';
+import { httpsCallable } from 'firebase/functions';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
@@ -57,73 +59,49 @@ export default function UploadBatch() {
   const processFile = async (file: File, rules: any[]) => {
     const token = await auth.currentUser?.getIdToken();
     updateStatus(file.name, '⬆️ Uploading...');
-
-    // Step 1: Upload directly to Firebase Storage
-    const { storage } = await import('@/src/lib/firebase');
-    const { ref, uploadBytes } = await import('firebase/storage');
+    // Upload is now handled below in the single try/catch block with logs
     
-    const ext = file.name.split('.').pop() || 'bin';
-    const storedFilename = `${Date.now()}-${Math.random().toString(36).substring(2, 10)}.${ext}`;
+    const invoiceRef = doc(collection(db, `organizations/${orgId}/invoices`));
+    const invoiceId = invoiceRef.id;
+
+    const storedFilename = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
     const storagePath = `invoices/${orgId}/${storedFilename}`;
     const storageRef = ref(storage, storagePath);
-    
+    const processInvoice = httpsCallable(functions, 'invoiceProcessorV3');
+
+    let extractedData: any = null;
     try {
+      console.log(`[${file.name}] Step 1: Uploading to Firebase Storage...`);
+      const startTime = Date.now();
+      
       await uploadBytes(storageRef, file, {
         contentType: file.type,
         customMetadata: { orgId: orgId as string, uploadedBy: auth.currentUser!.uid, originalName: file.name }
       });
+      
+      console.log(`[${file.name}] Upload complete in ${Date.now() - startTime}ms`);
+      updateStatus(file.name, '🤖 AI extraction in progress...');
+      console.log(`[${file.name}] Step 2: Calling Cloud Function invoiceProcessorV3...`);
+      
+      const fnStartTime = Date.now();
+      const result = await processInvoice({
+        orgId,
+        invoiceId,
+        storagePath,
+        fileName: file.name,
+        fileType: file.type
+      });
+      
+      console.log(`[${file.name}] Cloud Function returned in ${Date.now() - fnStartTime}ms`, result.data);
+      extractedData = result.data;
     } catch (err: any) {
-      throw new Error('Failed to upload file to storage: ' + err.message);
-    }
-    
-    // Create the Firestore invoice doc — this triggers runExtractionPipeline
-    const invoiceRef = doc(collection(db, `organizations/${orgId}/invoices`));
-    const invoiceId = invoiceRef.id;
-    
-    await setDoc(invoiceRef, {
-      orgId,
-      status: 'Extracting',
-      fileName: file.name,
-      fileType: file.type,
-      mimetype: file.type,
-      storagePath,
-      fileUrl: `/api/files/${storedFilename}`,
-      uploadedBy: auth.currentUser!.uid,
-      uploadedAt: Date.now(),
-      updatedAt: Date.now(),
-    });
-
-    await setDoc(doc(db, `fileMetadata/${storedFilename}`), {
-      orgId,
-      uploadedBy: auth.currentUser!.uid,
-      originalName: file.name,
-      storagePath,
-      createdAt: Date.now(),
-    });
-
-    // Step 2: Poll Firestore
-    updateStatus(file.name, '🤖 AI extraction in progress...');
-    const invoiceRef = doc(collection(db, `organizations/${orgId}/invoices`), invoiceId);
-    const TIMEOUT = 600_000;
-    const INTERVAL = 3_000;
-    const start = Date.now();
-    let extractedData: any = null;
-
-    while (Date.now() - start < TIMEOUT) {
-      await new Promise(r => setTimeout(r, INTERVAL));
-      const snap = await getDoc(invoiceRef);
-      if (!snap.exists()) continue;
-      const d = snap.data();
-      if (d?.status && d.status !== 'Extracting') {
-        extractedData = d;
-        break;
-      }
-      const elapsed = Math.round((Date.now() - start) / 1000);
-      updateStatus(file.name, `🤖 Extracting... (${elapsed}s elapsed)`);
+      console.error(`[${file.name}] ERROR details:`, err);
+      throw new Error(err.message || 'Pipeline failed during processing.');
     }
 
-    if (!extractedData) throw new Error('Extraction timed out. Check Review tab later.');
-    if (extractedData.status === 'Failed') throw new Error(extractedData.errorDetails || 'Pipeline failed.');
+    if (!extractedData || extractedData.status === 'Failed') {
+      throw new Error(extractedData?.errorDetails || 'Pipeline failed.');
+    }
 
     // Step 3: Apply rules
     updateStatus(file.name, '📋 Applying rules...');

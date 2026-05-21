@@ -39,74 +39,59 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
  *   c) Run the 3-layer cascading OCR pipeline
  *   d) Write extractedData + confidenceScores + layerUsed back to Firestore
  */
-export const runExtractionPipeline = onDocumentCreated(
+export const runExtractionPipeline = onCall(
   {
-    document:      'organizations/{orgId}/invoices/{invoiceId}',
     region:        'us-central1',
     timeoutSeconds: 540,
     memory:        '2GiB',
     secrets:       ['GEMINI_API_KEY'],
   },
-  async (event) => {
-    const { orgId, invoiceId } = event.params;
-    const snap = event.data;
+  async (request) => {
+    const { orgId, invoiceId, storagePath, fileName, fileType } = request.data;
+    const uid = request.auth?.uid;
 
-    if (!snap) {
-      console.warn(`[Pipeline] No snapshot data for ${invoiceId}`);
-      return;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'User must be logged in to process invoices.');
+    }
+    if (!orgId || !invoiceId || !storagePath) {
+      throw new HttpsError('invalid-argument', 'Missing orgId, invoiceId, or storagePath.');
     }
 
-    const invoice = snap.data();
-    const invoiceRef = snap.ref;
+    const invoiceRef = db.doc(`organizations/${orgId}/invoices/${invoiceId}`);
 
     // ── a) Quota guard via Firestore Transaction ─────────────────────────────
-    const uploadedBy: string = invoice.uploadedBy || '';
-    if (uploadedBy) {
-      const userRef = db.doc(`users/${uploadedBy}`);
-      try {
-        await db.runTransaction(async (txn) => {
-          const userDoc = await txn.get(userRef);
-          const current = (userDoc.data()?.invoiceCount as number) || 0;
+    const userRef = db.doc(`users/${uid}`);
+    try {
+      await db.runTransaction(async (txn) => {
+        const userDoc = await txn.get(userRef);
+        const current = (userDoc.data()?.invoiceCount as number) || 0;
 
-          if (current >= INVOICE_QUOTA) {
-            throw new Error(`QUOTA_EXCEEDED:${uploadedBy}`);
-          }
-
-          // Atomically increment count
-          txn.update(userRef, { invoiceCount: FieldValue.increment(1) });
-        });
-      } catch (err: any) {
-        if (err.message?.startsWith('QUOTA_EXCEEDED')) {
-          console.warn(`[Pipeline] Quota exceeded for user ${uploadedBy}. Aborting.`);
-          await invoiceRef.update({
-            status:       'Failed',
-            errorDetails: 'Monthly invoice quota (500) reached. Please upgrade your plan.',
-            updatedAt:    Date.now(),
-          });
-          return;
+        if (current >= INVOICE_QUOTA) {
+          throw new Error(`QUOTA_EXCEEDED:${uid}`);
         }
-        throw err; // Rethrow unexpected errors
+
+        // Atomically increment count
+        txn.update(userRef, { invoiceCount: FieldValue.increment(1) });
+      });
+    } catch (err: any) {
+      if (err.message?.startsWith('QUOTA_EXCEEDED')) {
+        console.warn(`[Pipeline] Quota exceeded for user ${uid}. Aborting.`);
+        await invoiceRef.update({
+          status:       'Failed',
+          errorDetails: 'Monthly invoice quota (500) reached. Please upgrade your plan.',
+          updatedAt:    Date.now(),
+        });
+        throw new HttpsError('resource-exhausted', 'Monthly invoice quota reached.');
       }
+      throw new HttpsError('internal', 'Failed to update quota.');
     }
 
     // Mark as extracting
     await invoiceRef.update({ status: 'Extracting', updatedAt: Date.now() });
 
     // ── b) Load file buffer from Firebase Storage ────────────────────────────
-    // FIX: read both 'mimetype' and 'fileType' fields (UploadBatch writes 'fileType',
-    //      but the field was previously expected as 'mimetype')
-    const storagePath:  string = invoice.storagePath || '';
-    const mimetype:     string = invoice.mimetype || invoice.fileType || 'application/pdf';
-    const originalname: string = invoice.fileName  || 'invoice';
-
-    if (!storagePath) {
-      await invoiceRef.update({
-        status:       'Failed',
-        errorDetails: 'Missing storagePath — file could not be loaded for extraction.',
-        updatedAt:    Date.now(),
-      });
-      return;
-    }
+    const mimetype:     string = fileType || 'application/pdf';
+    const originalname: string = fileName || 'invoice';
 
     let buffer: Buffer;
     try {
@@ -119,13 +104,10 @@ export const runExtractionPipeline = onDocumentCreated(
         errorDetails: 'Could not retrieve uploaded file from storage.',
         updatedAt:    Date.now(),
       });
-      return;
+      throw new HttpsError('not-found', 'Could not retrieve uploaded file from storage.');
     }
 
     // ── c) 3-Layer Cascading OCR Pipeline ───────────────────────────────────
-    // FIX: Use runPipeline() instead of duplicating the logic here.
-    // runPipeline handles handwriting detection, Layer 1/2/3 cascade, and
-    // preserves OCR context correctly at every fallback step.
     let pipelineResult: Awaited<ReturnType<typeof runPipeline>>;
     try {
       pipelineResult = await runPipeline({
@@ -133,7 +115,7 @@ export const runExtractionPipeline = onDocumentCreated(
         mimetype,
         originalname,
         orgId,
-        uid: invoice.uploadedBy || '',
+        uid,
       });
     } catch (pipelineErr) {
       console.error('[Pipeline] Extraction error:', pipelineErr);
@@ -142,13 +124,12 @@ export const runExtractionPipeline = onDocumentCreated(
         errorDetails: 'OCR extraction pipeline failed. Please retry or enter data manually.',
         updatedAt:    Date.now(),
       });
-      return;
+      throw new HttpsError('internal', 'OCR extraction pipeline failed.');
     }
 
     const { invoices: extractedData, extractionLayer } = pipelineResult;
 
     // ── d) Write results back to Firestore ───────────────────────────────────
-    // Take the first extracted invoice (batch PDFs handled in layer3_gemini)
     const primaryInvoice  = extractedData[0] || {};
     const confidenceScores = primaryInvoice.confidenceScores || {};
     const allScores = Object.values(confidenceScores) as number[];
@@ -167,9 +148,8 @@ export const runExtractionPipeline = onDocumentCreated(
       modelVariant:   primaryInvoice.modelVariant || extractionLayer,
       updatedAt:      Date.now(),
 
-      // FIX: preserve storagePath and fileUrl so serveFile can generate signed URLs
-      storagePath:    invoice.storagePath || '',
-      fileUrl:        invoice.fileUrl || `/api/files/${(invoice.storagePath || '').split('/').pop()}`,
+      storagePath:    storagePath,
+      fileUrl:        `/api/files/${storagePath.split('/').pop()}`,
 
       // Top-level fields for querying/display
       vendorName:     primaryInvoice.vendorName     || '',
@@ -209,8 +189,8 @@ export const runExtractionPipeline = onDocumentCreated(
           status:         'Ready for Review',
           extractionLayer,
           layerUsed:      extractionLayer,
-          uploadedBy:     invoice.uploadedBy,
-          uploadedAt:     invoice.uploadedAt,
+          uploadedBy:     uid,
+          uploadedAt:     Date.now(),
           orgId,
           batchParent:    invoiceId,
         });
@@ -221,6 +201,8 @@ export const runExtractionPipeline = onDocumentCreated(
 
     await invoiceRef.update(updatePayload);
     console.log(`[Pipeline] ✅ Invoice ${invoiceId} extracted via ${extractionLayer} (confidence: ${overallConfidence}%)`);
+    
+    return { success: true, ...updatePayload };
   }
 );
 

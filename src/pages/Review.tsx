@@ -514,7 +514,7 @@ export default function Review() {
        let fetchUrl = inv.fileUrl;
        if (fetchUrl && fetchUrl.includes('/api/files/')) {
            const parts = fetchUrl.split('/api/files/');
-           fetchUrl = '/api/files/' + parts[parts.length - 1];
+           fetchUrl = 'https://us-central1-gen-lang-client-00224039-a9ae1.cloudfunctions.net/serveFile/' + parts[parts.length - 1];
        } else if (fetchUrl && fetchUrl.startsWith('http://') && !window.location.hostname.includes('localhost')) {
            fetchUrl = fetchUrl.replace('http://', 'https://');
        }
