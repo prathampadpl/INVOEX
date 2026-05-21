@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { auth, db } from '@/src/lib/firebase';
-import { doc, getDoc, writeBatch, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -10,14 +10,30 @@ import { useAuth } from '@/src/lib/store';
 export default function Login() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const { setOrgInfo } = useAuth();
 
-  const handleLogin = async () => {
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+      toast.error('Please enter both email and password');
+      return;
+    }
+
     try {
       setLoading(true);
-      const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
+      let user;
+      
+      if (isSignUp) {
+        const result = await createUserWithEmailAndPassword(auth, email, password);
+        user = result.user;
+        toast.success('Account created successfully');
+      } else {
+        const result = await signInWithEmailAndPassword(auth, email, password);
+        user = result.user;
+      }
       
       const idToken = await user.getIdToken();
       
@@ -37,7 +53,6 @@ export default function Login() {
       const data = await response.json();
       console.log("[LOGIN] Onboarding complete, org:", data.orgId);
       
-      // Fetch org details to sync Zustand store immediately
       try {
         const [memberDoc, orgDoc] = await Promise.all([
           getDoc(doc(db, `organizations/${data.orgId}/members`, user.uid)),
@@ -55,38 +70,33 @@ export default function Login() {
         setOrgInfo(data.orgId, 'owner', 'My Organization');
       }
       
-      toast.success('Logged in successfully');
+      if (!isSignUp) toast.success('Logged in successfully');
       navigate('/dashboard');
     } catch (e: any) {
-      console.error("Login error:", e);
-      let errorMessage = 'Login failed. Please try again.';
+      console.error("Auth error:", e);
+      let errorMessage = 'Authentication failed. Please try again.';
       switch (e.code) {
         case 'auth/invalid-credential':
         case 'auth/invalid-login-credentials':
-          errorMessage = 'Invalid credentials. Please check your account details.';
-          break;
-        case 'auth/user-disabled':
-          errorMessage = 'This account has been locked or disabled. Please contact support.';
+          errorMessage = 'Invalid email or password.';
           break;
         case 'auth/user-not-found':
-          errorMessage = 'No account found with these credentials.';
+          errorMessage = 'No account found with this email.';
           break;
         case 'auth/wrong-password':
           errorMessage = 'Incorrect password.';
           break;
-        case 'auth/popup-closed-by-user':
-          errorMessage = 'Sign-in popup was closed before completing.';
+        case 'auth/email-already-in-use':
+          errorMessage = 'An account already exists with this email address.';
+          break;
+        case 'auth/weak-password':
+          errorMessage = 'Password must be at least 6 characters long.';
           break;
         case 'auth/network-request-failed':
           errorMessage = 'Network error. Please check your internet connection.';
           break;
-        case 'auth/account-exists-with-different-credential':
-          errorMessage = 'An account already exists with the same email. Please sign in using the provider associated with this email address.';
-          break;
         default:
-          if (e.message) {
-            errorMessage = e.message;
-          }
+          if (e.message) errorMessage = e.message;
       }
       toast.error(errorMessage);
     } finally {
@@ -96,37 +106,52 @@ export default function Login() {
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-sm border bg-white shadow-sm p-8 rounded-xl text-center space-y-6">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Welcome back</h2>
-          <p className="text-neutral-500 text-sm mt-2">Sign in to manage your invoices</p>
+      <div className="w-full max-w-sm border bg-white shadow-sm p-8 rounded-xl space-y-6">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold tracking-tight">{isSignUp ? 'Create an Account' : 'Welcome back'}</h2>
+          <p className="text-neutral-500 text-sm mt-2">{isSignUp ? 'Sign up to get started' : 'Sign in to manage your invoices'}</p>
         </div>
-        <Button onClick={handleLogin} disabled={loading} className="w-full">
-          {loading ? 'Signing in...' : 'Sign in with Google'}
-        </Button>
-        {window.location.hostname === 'localhost' && (
-          <Button 
-            onClick={async () => {
-              try {
-                setLoading(true);
-                const res = await fetch('/api/dev/token?uid=qUahDEq5x6OnYaQQ9HdZwZlMV463');
-                const { token } = await res.json();
-                const { signInWithCustomToken } = await import('firebase/auth');
-                await signInWithCustomToken(auth, token);
-                toast.success('Logged in as Dev User');
-                navigate('/dashboard');
-              } catch (err: any) {
-                toast.error('Dev login failed: ' + err.message);
-              } finally {
-                setLoading(false);
-              }
-            }} 
-            variant="outline" 
-            className="w-full"
-          >
-            Dev Auto-Login
+        
+        <form onSubmit={handleAuth} className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Email</label>
+            <input 
+              type="email" 
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full px-3 py-2 border rounded-md text-sm"
+              placeholder="you@example.com"
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Password</label>
+            <input 
+              type="password" 
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full px-3 py-2 border rounded-md text-sm"
+              placeholder="••••••••"
+              required
+            />
+          </div>
+          <Button type="submit" disabled={loading} className="w-full">
+            {loading ? 'Processing...' : (isSignUp ? 'Sign Up' : 'Sign In')}
           </Button>
-        )}
+        </form>
+
+        <div className="text-center text-sm">
+          <span className="text-neutral-500">
+            {isSignUp ? 'Already have an account?' : 'Don\'t have an account?'}
+          </span>{' '}
+          <button 
+            type="button" 
+            onClick={() => setIsSignUp(!isSignUp)}
+            className="text-primary font-medium hover:underline"
+          >
+            {isSignUp ? 'Sign In' : 'Sign Up'}
+          </button>
+        </div>
       </div>
     </div>
   );
