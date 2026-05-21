@@ -1,5 +1,16 @@
 import { GoogleGenAI } from '@google/genai';
 
+// Singleton client — avoids re-instantiation on every warm invocation
+let _ai: GoogleGenAI | null = null;
+function getAI(): GoogleGenAI | null {
+  if (!process.env.GEMINI_API_KEY) {
+    console.warn('[Handwriting] GEMINI_API_KEY not set — handwriting detection disabled');
+    return null;
+  }
+  if (!_ai) _ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  return _ai;
+}
+
 /**
  * Layer 0: Handwriting Detection
  * Uses a cheap single-turn Gemini Flash call to determine if an image is
@@ -15,8 +26,10 @@ export async function detectHandwriting(buffer: Buffer, mimetype: string): Promi
   // Only attempt for images
   if (!mimetype.startsWith('image/')) return false;
 
+  const ai = getAI();
+  if (!ai) return false; // GEMINI_API_KEY missing — fail gracefully
+
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const result = await ai.models.generateContent({
       model: 'gemini-2.0-flash',
       contents: [{

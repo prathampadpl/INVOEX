@@ -16,7 +16,7 @@ export { serveFile }  from './handlers/fileServe';
 
 // ─── Four PRD-specified functions ────────────────────────────────────────────
 export {
-  runExtractionPipeline,
+  runExtractionPipeline as invoiceProcessorV3,
   cashfreeWebhookHandler,
   deleteExpiredFiles,
   getCorrectionStats,

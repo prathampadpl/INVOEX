@@ -10,4 +10,5 @@ if (!getApps().length) {
 
 export const db = getFirestore();
 export const auth = getAuth();
-export const bucket = getStorage().bucket();
+// FIX: Explicit bucket name prevents mismatch with new-style Firebase Storage domains
+export const bucket = getStorage().bucket('studio-2901235520-386ed.firebasestorage.app');

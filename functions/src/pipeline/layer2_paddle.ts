@@ -35,10 +35,11 @@ const MODEL_URLS: Record<string, string> = {
   rec: `${MODEL_BASE}/en_PP-OCRv5_mobile_rec_infer.tar`,
 };
 
-// Alternative direct ONNX model URLs (HuggingFace mirror — faster)
+// Verified PP-OCRv5 mobile ONNX model URLs from official PaddleOCR npm package CDN
+// Source: @paddleocr/paddleocr-js package assets (published v0.3.2)
 const ONNX_URLS: Record<string, string> = {
-  det: 'https://huggingface.co/paddlepaddle/PaddleOCR/resolve/main/PP-OCRv5_mobile_det.onnx',
-  rec: 'https://huggingface.co/paddlepaddle/PaddleOCR/resolve/main/en_PP-OCRv5_mobile_rec.onnx',
+  det: 'https://cdn.jsdelivr.net/npm/@paddleocr/paddleocr-js@0.3.2/dist/PP-OCRv5_mobile_det.onnx',
+  rec: 'https://cdn.jsdelivr.net/npm/@paddleocr/paddleocr-js@0.3.2/dist/en_PP-OCRv5_mobile_rec.onnx',
 };
 
 // Character set for English recognition (PP-OCRv5 en dict)
