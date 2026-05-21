@@ -1,26 +1,46 @@
+/**
+ * INVOEX v2.0 — extract HTTP Handler (FIXED)
+ * ============================================
+ * FIX #8: extract handler now does ONLY:
+ *   1. Auth verification
+ *   2. Multipart file parsing
+ *   3. File type validation
+ *   4. Upload to Firebase Storage
+ *   5. Create Firestore doc (status: 'Extracting')
+ *   6. Return { invoiceId, orgId } immediately
+ *
+ * The Firestore onCreate trigger (runExtractionPipeline in core.ts)
+ * then fires and runs the actual 3-layer OCR pipeline.
+ * This eliminates the double-pipeline execution bug.
+ *
+ * FIX #9: cors: true added
+ */
+
 import { onRequest } from 'firebase-functions/v2/https';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { auth, db, bucket } from '../utils/firebaseAdmin';
 import { checkOrgMembership } from '../utils/validation';
-import { runPipeline } from '../pipeline/router';
 import Busboy from 'busboy';
 
-/**
- * POST /api/extract
- * Accepts multipart file upload, runs the 3-layer OCR pipeline,
- * stores the file in Firebase Storage, and returns extracted invoice data.
- *
- * Replaces the Express /api/extract route in server.ts.
- */
 export const extract = onRequest(
   {
     region: 'us-central1',
-    timeoutSeconds: 540, // max timeout for Pro model + large PDFs
-    memory: '2GiB',
+    timeoutSeconds: 120,   // Reduced: just upload + Firestore write, no pipeline
+    memory: '512MiB',
+    cors: true,
     invoker: 'public',
   },
   async (req, res) => {
+    // Handle preflight
+    if (req.method === 'OPTIONS') {
+      res.set('Access-Control-Allow-Origin', '*');
+      res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+      res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+      res.status(204).send('');
+      return;
+    }
+
     if (req.method !== 'POST') {
       res.status(405).json({ error: 'Method not allowed' });
       return;
@@ -39,7 +59,7 @@ export const extract = onRequest(
       return;
     }
 
-    // Parse multipart form data with busboy
+    // Parse multipart form data
     const parseMultipart = (): Promise<{ file: Buffer; mimetype: string; originalname: string; orgId: string }> => {
       return new Promise((resolve, reject) => {
         const bb = Busboy({
@@ -75,7 +95,6 @@ export const extract = onRequest(
 
         bb.on('error', reject);
 
-        // Cloud Functions v2 gives us req as a raw IncomingMessage
         if (Buffer.isBuffer((req as any).rawBody)) {
           bb.write((req as any).rawBody);
           bb.end();
@@ -126,14 +145,12 @@ export const extract = onRequest(
     }
 
     if (!isValidType) {
-      res.status(400).json({ error: 'Unsupported or invalid file format. Only PDF, images (JPG/PNG/WEBP/HEIC), TXT, and DOCX are allowed.' });
+      res.status(400).json({ error: 'Unsupported file format. Only PDF, images (JPG/PNG/WEBP/HEIC), TXT, and DOCX allowed.' });
       return;
     }
 
-    // Deduplicate by file hash
-    const fileHash = crypto.createHash('sha256').update(buffer).digest('hex');
-
     // Upload to Firebase Storage
+    const fileHash = crypto.createHash('sha256').update(buffer).digest('hex');
     const ext = path.extname(originalname).toLowerCase() || '.bin';
     const storedFilename = `${crypto.randomBytes(16).toString('hex')}${ext}`;
     const storagePath = `invoices/${orgId}/${storedFilename}`;
@@ -141,17 +158,10 @@ export const extract = onRequest(
     try {
       const fileRef = bucket.file(storagePath);
       await fileRef.save(buffer, {
-        metadata: { contentType: mimetype, metadata: { orgId, uploadedBy: user.uid, originalName: originalname } }
-      });
-
-      // Store file metadata in Firestore
-      await db.doc(`fileMetadata/${storedFilename}`).set({
-        orgId,
-        uploadedBy: user.uid,
-        originalName: originalname,
-        storagePath,
-        fileHash,
-        createdAt: Date.now(),
+        metadata: {
+          contentType: mimetype,
+          metadata: { orgId, uploadedBy: user.uid, originalName: originalname }
+        }
       });
     } catch (storageErr) {
       console.error('[Extract] Storage upload failed:', storageErr);
@@ -159,37 +169,44 @@ export const extract = onRequest(
       return;
     }
 
-    // Run the 3-layer pipeline
-    let pipelineResult;
-    try {
-      pipelineResult = await runPipeline({
-        buffer,
-        mimetype,
-        originalname,
-        orgId,
-        uid: user.uid,
-      });
-    } catch (pipelineErr) {
-      console.error('[Extract] Pipeline error:', pipelineErr);
-      res.status(500).json({ error: 'Extraction pipeline failed' });
-      return;
-    }
+    // Create the Firestore invoice doc — this triggers runExtractionPipeline
+    const invoiceRef = db.collection(`organizations/${orgId}/invoices`).doc();
+    const invoiceId = invoiceRef.id;
 
-    const { invoices, extractionLayer, usedModel } = pipelineResult;
-
-    // Enrich each invoice with metadata
-    const enriched = invoices.map((inv: any) => ({
-      ...inv,
+    await invoiceRef.set({
       orgId,
+      status: 'Extracting',
+      fileName: originalname,
+      fileType: mimetype,
+      mimetype,                   // for runExtractionPipeline to use
+      storagePath,                // key field for the pipeline trigger
+      fileUrl: `/api/files/${storedFilename}`,
+      fileHash,
       uploadedBy: user.uid,
       uploadedAt: Date.now(),
-      extractionLayer,
-      modelVariant: usedModel, // backward compat
-      fileUrl: `/api/files/${storedFilename}`,
-      fileName: originalname,
-      status: (inv.validationErrors?.length > 0) ? 'Ready for Review' : 'Approved',
-    }));
+      updatedAt: Date.now(),
+    });
 
-    res.json(enriched);
+    // Store file metadata for signed URL generation
+    await db.doc(`fileMetadata/${storedFilename}`).set({
+      orgId,
+      uploadedBy: user.uid,
+      originalName: originalname,
+      storagePath,
+      fileHash,
+      createdAt: Date.now(),
+    });
+
+    console.log(`[Extract] Created invoice ${invoiceId}, pipeline triggered by Firestore onCreate.`);
+
+    // Return the invoice ID — frontend polls Firestore for status updates
+    res.json({
+      invoiceId,
+      orgId,
+      status: 'Extracting',
+      fileName: originalname,
+      fileUrl: `/api/files/${storedFilename}`,
+      message: 'File uploaded. AI extraction in progress...',
+    });
   }
 );

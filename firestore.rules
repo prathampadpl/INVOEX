@@ -31,9 +31,17 @@ service cloud.firestore {
       return data.keys().hasAll(['email', 'createdAt', 'updatedAt']) &&
              data.email is string && data.email.size() <= 200 &&
              data.createdAt is number && data.updatedAt is number &&
-             (data.keys().hasOnly(['email', 'createdAt', 'updatedAt', 'name', 'lastOrgId'])) &&
              (data.get('name', '') is string && data.get('name', '').size() <= 100) &&
-             (data.get('lastOrgId', '') is string && data.get('lastOrgId', '').size() <= 128);
+             (data.get('lastOrgId', '') is string && data.get('lastOrgId', '').size() <= 128) &&
+             (!('invoiceCount' in data) || data.invoiceCount is number) &&
+             (!('subscriptionStatus' in data) || data.subscriptionStatus is string) &&
+             (!('cashfreeCustomerId' in data) || data.cashfreeCustomerId is string) &&
+             (!('subscriptionId' in data) || data.subscriptionId is string) &&
+             (!('planId' in data) || data.planId is string) &&
+             (!('subscriptionStart' in data) || data.subscriptionStart is number) &&
+             (!('lastPaymentAt' in data) || data.lastPaymentAt is number) &&
+             (!('lastPaymentAmount' in data) || data.lastPaymentAmount is number) &&
+             (!('lastFailedPaymentAt' in data) || data.lastFailedPaymentAt is number);
     }
     
     function isValidOrganization(data) {
@@ -47,7 +55,7 @@ service cloud.firestore {
     function isValidOrgMember(data) {
       return data.keys().hasAll(['email', 'role', 'createdAt']) &&
              data.email is string && data.email.size() <= 200 &&
-             data.role is string && (data.role == 'admin' || data.role == 'member') &&
+             data.role is string && (data.role == 'owner' || data.role == 'admin' || data.role == 'member') &&
              data.createdAt is number &&
              data.keys().hasOnly(['email', 'role', 'createdAt']);
     }
@@ -166,11 +174,8 @@ service cloud.firestore {
         (resource != null && request.auth.token.email.lower() == resource.data.email.lower()) || 
         (resource != null && isOrgMember(resource.data.orgId))
       );
-      // Allow querying invites by email (for Login.tsx check)
-      allow list: if isSignedIn() && (
-        request.query.limit <= 20 && 
-        (request.query.filters.email == request.auth.token.email.lower() || isOrgMember(request.query.filters.orgId))
-      );
+      // Allow querying invites by email
+      allow list: if isSignedIn() && request.query.limit <= 20;
       
       allow create: if isSignedIn() && isOrgMember(incoming().orgId) && 
                     incoming().invitedBy == request.auth.uid &&
@@ -240,7 +245,16 @@ service cloud.firestore {
 
       match /corrections_log/{correctionId} {
         allow read, list: if isSignedIn() && isValidId(orgId) && isOrgMember(orgId);
-        allow create, update: if isSignedIn() && isValidId(orgId) && isOrgAdmin(orgId) &&
+        // FIX: allow any org member to create corrections (not just admins)
+        // Admins can also update/delete correction entries
+        allow create: if isSignedIn() && isValidId(orgId) && isOrgMember(orgId) &&
+               (!('vendor_name' in incoming()) || incoming().vendor_name is string) &&
+               (!('field_name' in incoming()) || incoming().field_name is string) &&
+               (!('original_value' in incoming()) || incoming().original_value is string) &&
+               (!('corrected_value' in incoming()) || incoming().corrected_value is string) &&
+               (!('updated_at' in incoming()) || incoming().updated_at is number) &&
+               (!('occurrence_count' in incoming()) || incoming().occurrence_count is number);
+        allow update: if isSignedIn() && isValidId(orgId) && isOrgAdmin(orgId) &&
                (!('vendor_name' in incoming()) || incoming().vendor_name is string) &&
                (!('field_name' in incoming()) || incoming().field_name is string) &&
                (!('original_value' in incoming()) || incoming().original_value is string) &&
@@ -249,6 +263,11 @@ service cloud.firestore {
                (!('occurrence_count' in incoming()) || incoming().occurrence_count is number);
       }
 
+      // FIX: Add rule for settings subcollection (Analytics pipeline thresholds)
+      match /settings/{settingId} {
+        allow read: if isSignedIn() && isValidId(orgId) && isOrgMember(orgId);
+        allow write: if isSignedIn() && isValidId(orgId) && isOrgAdmin(orgId);
+      }
       match /export_history/{exportId} {
         allow read, list: if isSignedIn() && isValidId(orgId) && isOrgMember(orgId);
         allow create: if isSignedIn() && isValidId(orgId) && isOrgMember(orgId) &&

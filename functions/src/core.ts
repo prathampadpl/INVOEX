@@ -20,15 +20,6 @@ import { FieldValue }           from 'firebase-admin/firestore';
 
 import { db, auth, bucket }     from './utils/firebaseAdmin';
 import { runPipeline }          from './pipeline/router';
-import { detectHandwriting }    from './pipeline/handwriting';
-import { runLayer1 }            from './pipeline/layer1_tesseract';
-import { runLayer2 }            from './pipeline/layer2_paddle';
-import { runLayer3 }            from './pipeline/layer3_gemini';
-import {
-  getOrgThresholds,
-  buildCorrectionsContext,
-  buildVendorsContext,
-} from './utils/validation';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -54,6 +45,7 @@ export const runExtractionPipeline = onDocumentCreated(
     region:        'us-central1',
     timeoutSeconds: 540,
     memory:        '2GiB',
+    secrets:       ['GEMINI_API_KEY'],
   },
   async (event) => {
     const { orgId, invoiceId } = event.params;
@@ -101,8 +93,10 @@ export const runExtractionPipeline = onDocumentCreated(
     await invoiceRef.update({ status: 'Extracting', updatedAt: Date.now() });
 
     // ── b) Load file buffer from Firebase Storage ────────────────────────────
-    const storagePath: string = invoice.storagePath || '';
-    const mimetype:    string = invoice.mimetype    || 'application/pdf';
+    // FIX: read both 'mimetype' and 'fileType' fields (UploadBatch writes 'fileType',
+    //      but the field was previously expected as 'mimetype')
+    const storagePath:  string = invoice.storagePath || '';
+    const mimetype:     string = invoice.mimetype || invoice.fileType || 'application/pdf';
     const originalname: string = invoice.fileName  || 'invoice';
 
     if (!storagePath) {
@@ -129,98 +123,18 @@ export const runExtractionPipeline = onDocumentCreated(
     }
 
     // ── c) 3-Layer Cascading OCR Pipeline ───────────────────────────────────
-    let extractionLayer = 'unknown';
-    let extractedData: any[] = [];
-
+    // FIX: Use runPipeline() instead of duplicating the logic here.
+    // runPipeline handles handwriting detection, Layer 1/2/3 cascade, and
+    // preserves OCR context correctly at every fallback step.
+    let pipelineResult: Awaited<ReturnType<typeof runPipeline>>;
     try {
-      // Fetch org thresholds & context in parallel
-      const [thresholds, correctionsCtx, vendorsCtx] = await Promise.all([
-        getOrgThresholds(orgId),
-        buildCorrectionsContext(orgId),
-        buildVendorsContext(orgId),
-      ]);
-
-      console.log(`[Pipeline] Thresholds: L1=${thresholds.layer1}% L2=${thresholds.layer2}% L3a=${thresholds.layer3a}%`);
-
-      const geminiCall = (
-        model: 'gemini-2.0-flash' | 'gemini-2.5-flash' | 'gemini-2.5-pro',
-        ocrText: string,
-        threshold: number,
-      ) => runLayer3({
-        buffer, mimetype, originalname,
-        ocrText,
-        model,
-        correctionsLogString: correctionsCtx,
-        knownVendorsString:   vendorsCtx,
-        threshold,
+      pipelineResult = await runPipeline({
+        buffer,
+        mimetype,
+        originalname,
+        orgId,
+        uid: invoice.uploadedBy || '',
       });
-
-      // Pre-check: handwriting detection
-      const isHandwritten = await detectHandwriting(buffer, mimetype);
-      console.log(`[Pipeline] Handwriting detected: ${isHandwritten}`);
-
-      if (isHandwritten) {
-        // Skip Layers 1 & 2 — go directly to Gemini Flash
-        console.log('[Pipeline] Routing handwritten invoice → Layer 3a (Gemini Flash)');
-        const l3a = await geminiCall('gemini-2.0-flash', '', thresholds.layer3a);
-        if (l3a.passed) {
-          extractedData  = l3a.invoices;
-          extractionLayer = 'gemini-flash';
-        } else {
-          console.log('[Pipeline] Layer 3a confidence low → Layer 3b (Gemini Pro)');
-          const l3b = await geminiCall('gemini-2.5-pro', '', 0);
-          extractedData  = l3b.invoices;
-          extractionLayer = 'gemini-pro';
-        }
-      } else {
-        // Layer 1 — Tesseract
-        console.log('[Pipeline] Running Layer 1 (Tesseract)…');
-        const l1 = await runLayer1(buffer, mimetype, thresholds.layer1);
-        console.log(`[Pipeline] L1 confidence: ${l1.overallConfidence.toFixed(1)}% (threshold: ${thresholds.layer1}%)`);
-
-        if (l1.passed) {
-          const l3 = await geminiCall('gemini-2.0-flash', l1.ocrText, thresholds.layer3a);
-          if (l3.passed) {
-            extractedData  = l3.invoices;
-            extractionLayer = 'tesseract';
-          }
-          // Fall through if Gemini didn't meet threshold
-        }
-
-        if (!extractedData.length) {
-          // Layer 2 — PaddleOCR
-          console.log('[Pipeline] Running Layer 2 (PaddleOCR)…');
-          const l2 = await runLayer2(buffer, mimetype, thresholds.layer2);
-          console.log(`[Pipeline] L2 confidence: ${l2.overallConfidence.toFixed(1)}% (threshold: ${thresholds.layer2}%)`);
-
-          if (l2.passed) {
-            const l3 = await geminiCall('gemini-2.0-flash', l2.ocrText, thresholds.layer3a);
-            if (l3.passed) {
-              extractedData  = l3.invoices;
-              extractionLayer = 'paddle';
-            }
-          }
-        }
-
-        if (!extractedData.length) {
-          // Layer 3a — Gemini Flash
-          console.log('[Pipeline] Running Layer 3a (Gemini Flash)…');
-          const ocrContext = ''; // Layers 1+2 failed, no OCR context available
-          const l3a = await geminiCall('gemini-2.0-flash', ocrContext, thresholds.layer3a);
-          console.log(`[Pipeline] L3a passed: ${l3a.passed}`);
-
-          if (l3a.passed) {
-            extractedData  = l3a.invoices;
-            extractionLayer = 'gemini-flash';
-          } else {
-            // Layer 3b — Gemini Pro (best effort, always accept)
-            console.log('[Pipeline] Escalating to Layer 3b (Gemini Pro — best effort)…');
-            const l3b = await geminiCall('gemini-2.5-pro', ocrContext, 0);
-            extractedData  = l3b.invoices;
-            extractionLayer = 'gemini-pro';
-          }
-        }
-      }
     } catch (pipelineErr) {
       console.error('[Pipeline] Extraction error:', pipelineErr);
       await invoiceRef.update({
@@ -230,6 +144,8 @@ export const runExtractionPipeline = onDocumentCreated(
       });
       return;
     }
+
+    const { invoices: extractedData, extractionLayer } = pipelineResult;
 
     // ── d) Write results back to Firestore ───────────────────────────────────
     // Take the first extracted invoice (batch PDFs handled in layer3_gemini)
@@ -250,6 +166,10 @@ export const runExtractionPipeline = onDocumentCreated(
       extractionLayer,
       modelVariant:   primaryInvoice.modelVariant || extractionLayer,
       updatedAt:      Date.now(),
+
+      // FIX: preserve storagePath and fileUrl so serveFile can generate signed URLs
+      storagePath:    invoice.storagePath || '',
+      fileUrl:        invoice.fileUrl || `/api/files/${(invoice.storagePath || '').split('/').pop()}`,
 
       // Top-level fields for querying/display
       vendorName:     primaryInvoice.vendorName     || '',
@@ -466,7 +386,7 @@ export const cashfreeWebhookHandler = onRequest(
  */
 export const deleteExpiredFiles = onSchedule(
   {
-    schedule:       '30 20 * * *',   // 02:00 IST = 20:30 UTC
+    schedule:       '0 2 * * *',     // 02:00 AM IST daily (timeZone set below)
     timeZone:       'Asia/Kolkata',
     region:         'us-central1',
     timeoutSeconds: 540,

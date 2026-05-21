@@ -9,8 +9,15 @@ import { checkOrgMembership } from '../utils/validation';
  * Migrated from server.ts Express handler.
  */
 export const onboarding = onRequest(
-  { region: 'us-central1', timeoutSeconds: 60, memory: '256MiB' },
+  { region: 'us-central1', timeoutSeconds: 60, memory: '256MiB', cors: true, invoker: 'public' },
   async (req, res) => {
+    if (req.method === 'OPTIONS') {
+      res.set('Access-Control-Allow-Origin', '*');
+      res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+      res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+      res.status(204).send('');
+      return;
+    }
     if (req.method !== 'POST') {
       res.status(405).json({ error: 'Method not allowed' });
       return;

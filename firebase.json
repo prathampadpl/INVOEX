@@ -19,6 +19,7 @@
       { "source": "/api/extract", "function": "extract", "region": "us-central1" },
       { "source": "/api/auth/onboarding", "function": "onboarding", "region": "us-central1" },
       { "source": "/api/files/**", "function": "serveFile", "region": "us-central1" },
+      { "source": "/api/webhooks/cashfree", "function": "cashfreeWebhookHandler", "region": "us-central1" },
       { "source": "**", "destination": "/index.html" }
     ]
   },
