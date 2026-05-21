@@ -58,37 +58,48 @@ export default function UploadBatch() {
     const token = await auth.currentUser?.getIdToken();
     updateStatus(file.name, '⬆️ Uploading...');
 
-    // Step 1: Upload
-    const form = new FormData();
-    form.append('file', file);
-    form.append('orgId', orgId as string);
-
-    const ctrl = new AbortController();
-    const uploadTimeout = setTimeout(() => ctrl.abort(), 120_000);
-    let uploadResp: any;
-
+    // Step 1: Upload directly to Firebase Storage
+    const { storage } = await import('@/src/lib/firebase');
+    const { ref, uploadBytes } = await import('firebase/storage');
+    
+    const ext = file.name.split('.').pop() || 'bin';
+    const storedFilename = `${Date.now()}-${Math.random().toString(36).substring(2, 10)}.${ext}`;
+    const storagePath = `invoices/${orgId}/${storedFilename}`;
+    const storageRef = ref(storage, storagePath);
+    
     try {
-      const res = await fetch('/api/extract', {
-        method: 'POST',
-        body: form,
-        headers: { 'Authorization': `Bearer ${token}` },
-        signal: ctrl.signal,
+      await uploadBytes(storageRef, file, {
+        contentType: file.type,
+        customMetadata: { orgId: orgId as string, uploadedBy: auth.currentUser!.uid, originalName: file.name }
       });
-      clearTimeout(uploadTimeout);
-      const text = await res.text();
-      if (!res.ok) {
-        let msg = `Server error (${res.status})`;
-        try { msg = JSON.parse(text)?.error || msg; } catch {}
-        throw new Error(msg);
-      }
-      uploadResp = JSON.parse(text);
-    } catch (err) {
-      clearTimeout(uploadTimeout);
-      throw err;
+    } catch (err: any) {
+      throw new Error('Failed to upload file to storage: ' + err.message);
     }
+    
+    // Create the Firestore invoice doc — this triggers runExtractionPipeline
+    const invoiceRef = doc(collection(db, `organizations/${orgId}/invoices`));
+    const invoiceId = invoiceRef.id;
+    
+    await setDoc(invoiceRef, {
+      orgId,
+      status: 'Extracting',
+      fileName: file.name,
+      fileType: file.type,
+      mimetype: file.type,
+      storagePath,
+      fileUrl: `/api/files/${storedFilename}`,
+      uploadedBy: auth.currentUser!.uid,
+      uploadedAt: Date.now(),
+      updatedAt: Date.now(),
+    });
 
-    const { invoiceId } = uploadResp;
-    if (!invoiceId) throw new Error('No invoiceId from server');
+    await setDoc(doc(db, `fileMetadata/${storedFilename}`), {
+      orgId,
+      uploadedBy: auth.currentUser!.uid,
+      originalName: file.name,
+      storagePath,
+      createdAt: Date.now(),
+    });
 
     // Step 2: Poll Firestore
     updateStatus(file.name, '🤖 AI extraction in progress...');
