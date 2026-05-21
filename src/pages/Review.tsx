@@ -379,7 +379,7 @@ export default function Review() {
                  continue;
                }
 
-               const safeId = btoa(unescape(encodeURIComponent(`${vendorName}:${field}:${original}:${cleanedCorrected}`)))
+               const safeId = btoa(unescape(encodeURIComponent(`${String(vendorName)}:${String(field)}:${String(original)}:${String(cleanedCorrected)}`)))
                   .replace(/\//g, '_').replace(/\+/g, '-').replace(/=/g, '').substring(0, 500);
                   
                const correctionRef = doc(db, `organizations/${orgId}/corrections_log`, safeId);
@@ -537,7 +537,7 @@ export default function Review() {
   useEffect(() => {
     return () => {
       Object.values(objectUrls).forEach(url => {
-        try { URL.revokeObjectURL(url); } catch {}
+        try { URL.revokeObjectURL(url as string); } catch {}
       });
     };
   }, [objectUrls]);

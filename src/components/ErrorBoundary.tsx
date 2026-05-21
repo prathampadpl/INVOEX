@@ -10,8 +10,12 @@ interface State {
 }
 
 export default class ErrorBoundary extends Component<Props, State> {
+  public state: State;
+  public props: Props;
+
   constructor(props: Props) {
     super(props);
+    this.props = props;
     this.state = { hasError: false, error: null };
   }
 
@@ -35,7 +39,7 @@ export default class ErrorBoundary extends Component<Props, State> {
             </p>
             <div className="flex items-center justify-center gap-3">
               <button
-                onClick={() => this.setState({ hasError: false, error: null })}
+                onClick={() => (this as Component<Props, State>).setState({ hasError: false, error: null })}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
               >
                 Try Again

@@ -569,7 +569,8 @@ app.post('/api/upload-chunk', verifyToken, upload.single('chunk'), async (req, r
 
        // MAGIC BYTE VALIDATION (OWASP A03 Mitigation) on reassembled file
        const finalBuffer = fs.readFileSync(finalPath);
-       const fileTypeResult = await FileType.fromBuffer(finalBuffer);
+       const { fileTypeFromBuffer } = FileType as any;
+       const fileTypeResult = await fileTypeFromBuffer(finalBuffer);
        const isPlainTextFile = ext === '.txt';
        const isDocxFile = ext === '.docx';
        const isValidBinaryFile = fileTypeResult && isBinaryMimeAllowedForExtension(fileTypeResult.mime, ext);
@@ -691,10 +692,11 @@ app.post("/api/extract", verifyToken, extractLimiter, upload.single("file"), asy
 
     // MAGIC BYTE VALIDATION (OWASP A03 Mitigation) - Optimized: Read from file if available
     let detected;
+    const { fileTypeFromFile, fileTypeFromBuffer } = FileType as any;
     if (req.file.path) {
-      detected = await FileType.fromFile(req.file.path);
+      detected = await fileTypeFromFile(req.file.path);
     } else if (buffer) {
-      detected = await FileType.fromBuffer(buffer);
+      detected = await fileTypeFromBuffer(buffer);
     }
     
     if (isPlainTextUpload) {
@@ -1086,7 +1088,7 @@ Return ONLY a valid JSON ARRAY. If a single invoice spans multiple pages, it MUS
                else if (isHighDemand || isInternalError) {
                   console.warn(`[AI] ${currentModel} is overloaded/errored (Attempt ${attempt}): ${errStr.slice(0, 100)}`);
                   if (attempt < retriesForThisModel) {
-                     const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+                     const delay = Math.min(2000 * Math.pow(2, attempt - 1), 10000);
                      await new Promise(r => setTimeout(r, delay));
                   }
                } else {
