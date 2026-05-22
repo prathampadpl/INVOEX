@@ -3,22 +3,22 @@ import { User } from 'firebase/auth';
 
 interface AuthState {
   user: User | null;
-  orgId: string | null;
-  orgRole: string | null;
-  orgName: string | null;
+  workspaceId: string | null;
+  workspaceRole: string | null;
+  workspaceName: string | null;
   isLoaded: boolean;
   setUser: (user: User | null) => void;
-  setOrgInfo: (orgId: string | null, orgRole: string | null, orgName?: string | null) => void;
+  setWorkspaceInfo: (workspaceId: string | null, workspaceRole: string | null, workspaceName?: string | null) => void;
   setLoaded: (loaded: boolean) => void;
 }
 
 export const useAuth = create<AuthState>((set) => ({
   user: null,
-  orgId: null,
-  orgRole: null,
-  orgName: null,
+  workspaceId: null,
+  workspaceRole: null,
+  workspaceName: null,
   isLoaded: false,
   setUser: (user) => set({ user }),
-  setOrgInfo: (orgId, orgRole, orgName = null) => set({ orgId, orgRole, orgName }),
+  setWorkspaceInfo: (workspaceId, workspaceRole, workspaceName = null) => set({ workspaceId, workspaceRole, workspaceName }),
   setLoaded: (isLoaded) => set({ isLoaded }),
 }));

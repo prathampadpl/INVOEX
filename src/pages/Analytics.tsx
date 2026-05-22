@@ -26,8 +26,8 @@ const LAYER_LABELS: Record<string, string> = {
 };
 
 export default function Analytics() {
-  const { orgId, orgRole } = useAuth();
-  const isAdmin = orgRole === 'owner' || orgRole === 'admin';
+  const { workspaceId, workspaceRole } = useAuth();
+  const isAdmin = workspaceRole === 'owner' || workspaceRole === 'admin';
 
   const [corrections, setCorrections] = useState<any[]>([]);
   const [invoices, setInvoices] = useState<any[]>([]);
@@ -37,34 +37,34 @@ export default function Analytics() {
 
   // Load corrections log
   useEffect(() => {
-    if (!orgId) return;
+    if (!workspaceId) return;
     const q = query(
-      collection(db, `organizations/${orgId}/corrections_log`),
+      collection(db, `workspaces/${workspaceId}/corrections_log`),
       orderBy('occurrence_count', 'desc'),
       limit(200)
     );
     return onSnapshot(q, snap => {
       setCorrections(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     }, err => handleFirestoreError(err, OperationType.LIST, 'corrections_log'));
-  }, [orgId]);
+  }, [workspaceId]);
 
   // Load invoices for layer distribution chart
   useEffect(() => {
-    if (!orgId) return;
+    if (!workspaceId) return;
     const q = query(
-      collection(db, `organizations/${orgId}/invoices`),
+      collection(db, `workspaces/${workspaceId}/invoices`),
       orderBy('uploadedAt', 'desc'),
       limit(500)
     );
     return onSnapshot(q, snap => {
       setInvoices(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     }, err => handleFirestoreError(err, OperationType.LIST, 'invoices'));
-  }, [orgId]);
+  }, [workspaceId]);
 
   // Load pipeline settings
   useEffect(() => {
-    if (!orgId) return;
-    const settingsRef = doc(db, `organizations/${orgId}/settings/pipeline`);
+    if (!workspaceId) return;
+    const settingsRef = doc(db, `workspaces/${workspaceId}/settings/pipeline`);
     return onSnapshot(settingsRef, snap => {
       if (snap.exists()) {
         const t = snap.data()?.thresholds || {};
@@ -77,7 +77,7 @@ export default function Analytics() {
         setEditThresholds(loaded);
       }
     });
-  }, [orgId]);
+  }, [workspaceId]);
 
   // --- Computed Analytics ---
 
@@ -117,10 +117,10 @@ export default function Analytics() {
     .slice(0, 10);
 
   const handleSaveThresholds = async () => {
-    if (!orgId) return;
+    if (!workspaceId) return;
     setSavingThresholds(true);
     try {
-      await setDoc(doc(db, `organizations/${orgId}/settings/pipeline`), {
+      await setDoc(doc(db, `workspaces/${workspaceId}/settings/pipeline`), {
         thresholds: editThresholds,
         updatedAt: Date.now(),
       }, { merge: true });

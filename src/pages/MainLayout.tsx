@@ -9,8 +9,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 export default function MainLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, orgName, orgRole } = useAuth();
-  const isAdmin = orgRole === 'owner' || orgRole === 'admin';
+  const { user, workspaceName, workspaceRole } = useAuth();
+  const isAdmin = workspaceRole === 'owner' || workspaceRole === 'admin';
   
   const handleLogout = async () => {
     await signOut(auth);
@@ -63,7 +63,7 @@ export default function MainLayout() {
         <div className="flex items-center gap-3">
           <Button variant="outline" size="sm" className="hidden sm:flex text-gray-600 font-medium">
             <BarChart2 className="w-4 h-4 mr-2" />
-            {orgName || 'Loading...'}
+            {workspaceName || 'Loading...'}
           </Button>
           
           <Link to="/upload">

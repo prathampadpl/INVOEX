@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from '@/components/ui/sonner';
 import { auth, db, initError } from '@/src/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, writeBatch } from 'firebase/firestore';
 import { useAuth } from '@/src/lib/store';
 import ErrorBoundary from '@/src/components/ErrorBoundary';
 
@@ -20,7 +20,7 @@ import Export from './pages/Export';
 import Analytics from './pages/Analytics';
 
 export default function App() {
-  const { setUser, setOrgInfo, setLoaded, isLoaded, user } = useAuth();
+  const { setUser, setWorkspaceInfo, setLoaded, isLoaded, user } = useAuth();
 
   useEffect(() => {
     if (initError || !auth) {
@@ -31,54 +31,66 @@ export default function App() {
       setUser(u);
       if (u) {
         try {
-          let lastOrgId = null;
+          let activeWorkspaceId = null;
           const uDoc = await getDoc(doc(db, 'users', u.uid));
           if (uDoc.exists()) {
-            lastOrgId = uDoc.data()?.lastOrgId;
+            activeWorkspaceId = uDoc.data()?.activeWorkspaceId;
           }
 
-          if (!lastOrgId) {
-            console.log('[App] No user doc or lastOrgId found, calling onboarding endpoint...');
-            const idToken = await u.getIdToken();
-            const response = await fetch('https://us-central1-gen-lang-client-00224039-a9ae1.cloudfunctions.net/onboarding', {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${idToken}`,
-                'Content-Type': 'application/json'
-              }
+          if (!activeWorkspaceId) {
+            console.log('[App] No user doc or activeWorkspaceId found, creating default workspace...');
+            const newWorkspaceId = crypto.randomUUID();
+            const batch = writeBatch(db);
+            
+            batch.set(doc(db, 'workspaces', newWorkspaceId), {
+              name: 'My Workspace',
+              ownerId: u.uid,
+              createdAt: Date.now()
             });
-            if (response.ok) {
-              const resData = await response.json();
-              lastOrgId = resData.orgId;
-            }
+
+            batch.set(doc(db, `workspaces/${newWorkspaceId}/members`, u.uid), {
+              role: 'owner',
+              joinedAt: Date.now()
+            });
+
+            batch.set(doc(db, 'users', u.uid), {
+              email: u.email,
+              displayName: u.displayName || '',
+              activeWorkspaceId: newWorkspaceId,
+              plan: 'free',
+              createdAt: Date.now()
+            }, { merge: true });
+
+            await batch.commit();
+            activeWorkspaceId = newWorkspaceId;
           }
 
-          if (lastOrgId) {
+          if (activeWorkspaceId) {
             try {
               const [memberDoc, orgDoc] = await Promise.all([
-                getDoc(doc(db, `organizations/${lastOrgId}/members`, u.uid)),
-                getDoc(doc(db, 'organizations', lastOrgId))
+                getDoc(doc(db, `workspaces/${activeWorkspaceId}/members`, u.uid)),
+                getDoc(doc(db, 'workspaces', activeWorkspaceId))
               ]);
               if (memberDoc.exists() && orgDoc.exists()) {
                 const role = memberDoc.data()?.role;
                 const validRole = ['owner', 'admin', 'member'].includes(role) ? role : 'member';
-                setOrgInfo(lastOrgId, validRole, orgDoc.data()?.name);
+                setWorkspaceInfo(activeWorkspaceId, validRole, orgDoc.data()?.name);
               } else {
-                setOrgInfo(lastOrgId, 'owner', 'My Organization');
+                setWorkspaceInfo(activeWorkspaceId, 'owner', 'My Workspace');
               }
             } catch (memberErr) {
               console.error('Failed to fetch member/org doc, falling back', memberErr);
-              setOrgInfo(lastOrgId, 'owner', 'My Organization');
+              setWorkspaceInfo(activeWorkspaceId, 'owner', 'My Workspace');
             }
           } else {
-            setOrgInfo(null, null);
+            setWorkspaceInfo(null, null);
           }
         } catch (e) {
           console.error('Failed to fetch user org', e);
-          setOrgInfo(null, null);
+          setWorkspaceInfo(null, null);
         }
       } else {
-        setOrgInfo(null, null);
+        setWorkspaceInfo(null, null);
       }
       setLoaded(true);
     });

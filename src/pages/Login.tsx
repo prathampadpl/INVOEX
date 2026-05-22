@@ -13,7 +13,7 @@ export default function Login() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const { setOrgInfo } = useAuth();
+  const { setWorkspaceInfo } = useAuth();
 
   const handleResetPassword = async () => {
     if (!email) {
@@ -68,23 +68,23 @@ export default function Login() {
       }
       
       const data = await response.json();
-      console.log("[LOGIN] Onboarding complete, org:", data.orgId);
+      console.log("[LOGIN] Onboarding complete, org:", data.workspaceId);
       
       try {
         const [memberDoc, orgDoc] = await Promise.all([
-          getDoc(doc(db, `organizations/${data.orgId}/members`, user.uid)),
-          getDoc(doc(db, 'organizations', data.orgId))
+          getDoc(doc(db, `workspaces/${data.workspaceId}/members`, user.uid)),
+          getDoc(doc(db, 'workspaces', data.workspaceId))
         ]);
         if (memberDoc.exists() && orgDoc.exists()) {
           const role = memberDoc.data()?.role;
           const validRole = ['owner', 'admin', 'member'].includes(role) ? role : 'member';
-          setOrgInfo(data.orgId, validRole, orgDoc.data()?.name);
+          setWorkspaceInfo(data.workspaceId, validRole, orgDoc.data()?.name);
         } else {
-          setOrgInfo(data.orgId, 'owner', 'My Organization');
+          setWorkspaceInfo(data.workspaceId, 'owner', 'My Workspace');
         }
       } catch (err) {
         console.error("Failed to load org info after onboarding", err);
-        setOrgInfo(data.orgId, 'owner', 'My Organization');
+        setWorkspaceInfo(data.workspaceId, 'owner', 'My Workspace');
       }
       
       if (!isSignUp) toast.success('Logged in successfully');
