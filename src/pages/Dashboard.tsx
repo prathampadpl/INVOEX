@@ -47,20 +47,26 @@ export default function Dashboard() {
   }, [workspaceId]);
 
   const filteredInvoices = useMemo(() => {
+    // Bolt Optimization: Hoist string transformations and date parsing outside the filter loop
+    // This prevents repetitive execution on every invoice, saving CPU cycles on large datasets
+    const q = searchQuery ? searchQuery.toLowerCase() : '';
+    const startTimestamp = filterStartDate ? new Date(filterStartDate).getTime() : null;
+    const endTimestamp = filterEndDate ? new Date(filterEndDate).getTime() + 86400000 : null;
+
     let result = invoices.filter(inv => {
       if (statusFilter !== 'All statuses' && inv.status !== statusFilter) return false;
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
+
+      if (q) {
         if (!inv.vendorName?.toLowerCase().includes(q) && !inv.invoiceNumber?.toLowerCase().includes(q)) {
           return false;
         }
       }
       
-      if (filterStartDate) {
-        if (inv.uploadedAt && inv.uploadedAt < new Date(filterStartDate).getTime()) return false;
+      if (startTimestamp) {
+        if (inv.uploadedAt && inv.uploadedAt < startTimestamp) return false;
       }
-      if (filterEndDate) {
-        if (inv.uploadedAt && inv.uploadedAt > new Date(filterEndDate).getTime() + 86400000) return false;
+      if (endTimestamp) {
+        if (inv.uploadedAt && inv.uploadedAt > endTimestamp) return false;
       }
 
       return true;
@@ -95,6 +101,9 @@ export default function Dashboard() {
     const vendors: Record<string, { count: number; confSum: number }> = {};
     const days: Record<string, { date: string; volume: number; approved: number; flagged: number }> = {};
 
+    // Bolt Optimization: Instantiate formatter once outside the loop instead of calling toLocaleDateString inside
+    const dateFormatter = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
+
     invoices.forEach(inv => {
       if (inv.status === 'Approved') approved++;
       
@@ -108,7 +117,7 @@ export default function Dashboard() {
       }
 
       if (inv.uploadedAt) {
-        const d = new Date(inv.uploadedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const d = dateFormatter.format(new Date(inv.uploadedAt));
         if (!days[d]) days[d] = { date: d, volume: 0, approved: 0, flagged: 0 };
         days[d].volume++;
         if (inv.status === 'Approved') days[d].approved++;

@@ -3,6 +3,7 @@ import { useAuth } from '@/src/lib/store';
 import { db, handleFirestoreError, OperationType } from '@/src/lib/firebase';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table';
 import { Download, Calendar, Loader2 } from 'lucide-react';
@@ -34,19 +35,30 @@ export default function Export() {
     return unsubscribe;
   }, [workspaceId]);
 
-  const filteredInvoices = invoices.filter(i => {
-     if (filterStatus !== 'All' && i.status !== filterStatus) return false;
-     if (filterVendor && !i.vendorName?.toLowerCase().includes(filterVendor.toLowerCase())) return false;
-     
-     if (filterStartDate && i.invoiceDate) {
-        if (new Date(i.invoiceDate) < new Date(filterStartDate)) return false;
-     }
-     if (filterEndDate && i.invoiceDate) {
-        if (new Date(i.invoiceDate) > new Date(filterEndDate)) return false;
-     }
-     
-     return true;
-  });
+  const filteredInvoices = useMemo(() => {
+    // Bolt Optimization: Hoist string transformations and date parsing outside the filter loop
+    // Wrap in useMemo to prevent re-filtering on every render (e.g. when typing in a completely unrelated field, although not present here, it's good practice and avoids re-filtering when loading state changes)
+    const vendorLower = filterVendor ? filterVendor.toLowerCase() : '';
+    const startTimestamp = filterStartDate ? new Date(filterStartDate).getTime() : null;
+    const endTimestamp = filterEndDate ? new Date(filterEndDate).getTime() : null;
+
+    return invoices.filter(i => {
+       if (filterStatus !== 'All' && i.status !== filterStatus) return false;
+
+       if (vendorLower) {
+          if (!i.vendorName || !i.vendorName.toLowerCase().includes(vendorLower)) return false;
+       }
+
+       if (startTimestamp && i.invoiceDate) {
+          if (new Date(i.invoiceDate).getTime() < startTimestamp) return false;
+       }
+       if (endTimestamp && i.invoiceDate) {
+          if (new Date(i.invoiceDate).getTime() > endTimestamp) return false;
+       }
+
+       return true;
+    });
+  }, [invoices, filterStatus, filterVendor, filterStartDate, filterEndDate]);
 
   const handleExport = async () => {
     if (filteredInvoices.length === 0) return alert('No invoices match the export filters.');
