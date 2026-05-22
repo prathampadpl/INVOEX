@@ -53,7 +53,8 @@ export default function UploadBatch() {
     updateStatus(file.name, '⬆️ Uploading...');
     
     const uploadId = crypto.randomUUID();
-    const storagePath = `workspaces/${workspaceId}/uploads/${uploadId}`;
+    const userId = auth.currentUser!.uid;
+    const storagePath = `workspaces/${workspaceId}/users/${userId}/uploads/${uploadId}`;
     const storageRef = ref(storage, storagePath);
 
     try {
