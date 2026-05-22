@@ -25,7 +25,8 @@ export const onInvoiceUpload = onObjectFinalized(
 
     const pathParts = filePath.split('/');
     const workspaceId = pathParts[1];
-    const uploadId = pathParts[3]; // We use the filename (without extension if preferred) as the initial invoice ID
+    // Path is workspaces/{workspaceId}/users/{userId}/uploads/{uploadId}
+    const uploadId = pathParts[5];
 
     console.log(`[Pipeline] Processing upload ${uploadId} for workspace ${workspaceId}`);
 

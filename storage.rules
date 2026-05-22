@@ -3,12 +3,9 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     
-    // Secure workspaces path
-    match /workspaces/{workspaceId}/{allPaths=**} {
-      
-      // Fixes Bug 3 (IDOR): Only members of the workspace can read/write to its storage
-      allow read, write: if request.auth != null && 
-        firestore.exists(/databases/(default)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid));
+    // Secure workspaces path by enforcing user isolation
+    match /workspaces/{workspaceId}/users/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
     }
     
   }
