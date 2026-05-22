@@ -52,41 +52,6 @@ export default function Login() {
         user = result.user;
       }
       
-      const idToken = await user.getIdToken();
-      
-      const response = await fetch('https://us-central1-gen-lang-client-00224039-a9ae1.cloudfunctions.net/onboarding', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${idToken}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || 'Failed to complete onboarding');
-      }
-      
-      const data = await response.json();
-      console.log("[LOGIN] Onboarding complete, org:", data.workspaceId);
-      
-      try {
-        const [memberDoc, orgDoc] = await Promise.all([
-          getDoc(doc(db, `workspaces/${data.workspaceId}/members`, user.uid)),
-          getDoc(doc(db, 'workspaces', data.workspaceId))
-        ]);
-        if (memberDoc.exists() && orgDoc.exists()) {
-          const role = memberDoc.data()?.role;
-          const validRole = ['owner', 'admin', 'member'].includes(role) ? role : 'member';
-          setWorkspaceInfo(data.workspaceId, validRole, orgDoc.data()?.name);
-        } else {
-          setWorkspaceInfo(data.workspaceId, 'owner', 'My Workspace');
-        }
-      } catch (err) {
-        console.error("Failed to load org info after onboarding", err);
-        setWorkspaceInfo(data.workspaceId, 'owner', 'My Workspace');
-      }
-      
       if (!isSignUp) toast.success('Logged in successfully');
       navigate('/dashboard');
     } catch (e: any) {
