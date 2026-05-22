@@ -3,7 +3,7 @@ import { ZoomIn, ZoomOut, RotateCcw, ExternalLink } from 'lucide-react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/src/lib/store';
 import { db, auth, handleFirestoreError, OperationType } from '@/src/lib/firebase';
-import { doc, getDoc, updateDoc, collection, query, getDocs, limit, orderBy, where } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, query, getDocs, limit, orderBy, where, writeBatch } from 'firebase/firestore';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,7 +14,7 @@ export default function Review() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { orgId } = useAuth();
+  const { workspaceId } = useAuth();
   
   const stateList = location.state?.list as string[] | undefined;
   let prevId: string | null = null;
@@ -36,7 +36,7 @@ export default function Review() {
 
   useEffect(() => {
     const fetchCorrections = async () => {
-      if (!orgId) return;
+      if (!workspaceId) return;
       const currentVendorName = editData?.vendorName || invoice?.vendorName;
       if (!currentVendorName) {
         setVendorCorrections({});
@@ -45,7 +45,7 @@ export default function Review() {
       
       try {
         const q = query(
-          collection(db, `organizations/${orgId}/corrections_log`),
+          collection(db, `workspaces/${workspaceId}/corrections_log`),
           where('vendor_name', '==', currentVendorName),
           orderBy('updated_at', 'desc')
         );
@@ -74,7 +74,7 @@ export default function Review() {
     };
     
     fetchCorrections();
-  }, [orgId, editData?.vendorName, invoice?.vendorName]);
+  }, [workspaceId, editData?.vendorName, invoice?.vendorName]);
 
   // Simple Levenshtein distance for fuzzy matching
   const getDistance = (a: string, b: string) => {
@@ -171,10 +171,10 @@ export default function Review() {
 
   useEffect(() => {
     const fetchHistory = async () => {
-      if (!orgId) return;
+      if (!workspaceId) return;
       try {
         const q = query(
-          collection(db, `organizations/${orgId}/invoices`),
+          collection(db, `workspaces/${workspaceId}/invoices`),
           where('status', '==', 'Approved'),
           orderBy('uploadedAt', 'desc'),
           limit(200)
@@ -194,10 +194,10 @@ export default function Review() {
       }
     };
     fetchHistory();
-  }, [orgId]);
+  }, [workspaceId]);
 
   useEffect(() => {
-    if (!orgId || !id) return;
+    if (!workspaceId || !id) return;
     
     // Reset state when id changes
     setLoading(true);
@@ -206,7 +206,7 @@ export default function Review() {
     
     const fetchInvoice = async () => {
       try {
-        const docRef = doc(db, `organizations/${orgId}/invoices`, id);
+        const docRef = doc(db, `workspaces/${workspaceId}/invoices`, id);
         const snapshot = await getDoc(docRef);
         if (snapshot.exists()) {
           const data = snapshot.data();
@@ -270,14 +270,14 @@ export default function Review() {
           navigate('/dashboard');
         }
       } catch (err) {
-        handleFirestoreError(err, OperationType.GET, `organizations/${orgId}/invoices/${id}`);
+        handleFirestoreError(err, OperationType.GET, `workspaces/${workspaceId}/invoices/${id}`);
       } finally {
         setLoading(false);
       }
     };
     
     fetchInvoice();
-  }, [id, orgId, navigate]);
+  }, [id, workspaceId, navigate]);
 
   const [lastAutoSaveTime, setLastAutoSaveTime] = useState<Date | null>(null);
   const [isAutoSaving, setIsAutoSaving] = useState(false);
@@ -295,7 +295,7 @@ export default function Review() {
   }, [invoice]);
 
   useEffect(() => {
-    if (!orgId || !id) return;
+    if (!workspaceId || !id) return;
     
     // Auto-save every 30 seconds
     const intervalId = setInterval(async () => {
@@ -310,7 +310,7 @@ export default function Review() {
       
       try {
         setIsAutoSaving(true);
-        const docRef = doc(db, `organizations/${orgId}/invoices`, id);
+        const docRef = doc(db, `workspaces/${workspaceId}/invoices`, id);
         // Clean nulls and undefined before auto-save
         const cleanedData = { ...currentEditData };
         Object.keys(cleanedData).forEach(key => {
@@ -331,7 +331,7 @@ export default function Review() {
     }, 30000);
     
     return () => clearInterval(intervalId);
-  }, [orgId, id]);
+  }, [workspaceId, id]);
 
   const handleChange = (field: string, value: any) => {
     setEditData((prev: any) => ({ ...prev, [field]: value }));
@@ -355,7 +355,7 @@ export default function Review() {
   const invoiceDateError = isDateInvalid(editData.invoiceDate);
 
   const handleSave = async (status: string) => {
-    if (!orgId || !id) return;
+    if (!workspaceId || !id) return;
     
     if (status === 'Approved' && invoiceDateError) {
       toast.error('Please fix validation errors before approving.');
@@ -363,7 +363,7 @@ export default function Review() {
     }
 
     try {
-      const docRef = doc(db, `organizations/${orgId}/invoices`, id);
+      const docRef = doc(db, `workspaces/${workspaceId}/invoices`, id);
 
       if (status === 'Approved') {
         const fieldsToTrack = [
@@ -396,7 +396,7 @@ export default function Review() {
                const safeId = btoa(unescape(encodeURIComponent(`${vendorName}:${field}:${original}:${cleanedCorrected}`)))
                   .replace(/\//g, '_').replace(/\+/g, '-').replace(/=/g, '').substring(0, 500);
                   
-               const correctionRef = doc(db, `organizations/${orgId}/corrections_log`, safeId);
+               const correctionRef = doc(db, `workspaces/${workspaceId}/corrections_log`, safeId);
                await setDoc(correctionRef, {
                   vendor_name: String(vendorName).substring(0, 200),
                   field_name: String(field).substring(0, 100),
@@ -431,11 +431,11 @@ export default function Review() {
       const hasUpdates = Object.keys(propagationUpdates).length > 0;
       if (hasUpdates) {
         try {
-          const { getDocs, collection, query, writeBatch } = await import('firebase/firestore');
-          const invoicesColl = collection(db, `organizations/${orgId}/invoices`);
+          const invoicesColl = collection(db, `workspaces/${workspaceId}/invoices`);
           const q = query(invoicesColl);
           const querySnapshot = await getDocs(q);
-          const batch = writeBatch(db);
+          
+          const batches = [writeBatch(db)];
           let matchCount = 0;
           
           const currentVendor = (invoice?.vendorName || '').toLowerCase().trim();
@@ -467,15 +467,20 @@ export default function Review() {
               }
               
               if (hasMatch) {
-                const targetRef = doc(db, `organizations/${orgId}/invoices`, document.id);
-                batch.update(targetRef, updatesToApply);
+                if (matchCount > 0 && matchCount % 400 === 0) {
+                  batches.push(writeBatch(db));
+                }
+                const targetRef = doc(db, `workspaces/${workspaceId}/invoices`, document.id);
+                batches[batches.length - 1].update(targetRef, updatesToApply);
                 matchCount++;
               }
             }
           });
           
           if (matchCount > 0) {
-            await batch.commit();
+            for (const batch of batches) {
+              await batch.commit();
+            }
             toast.info(`Propagated corrections to ${matchCount} matching invoices.`);
           }
         } catch (propErr) {
@@ -587,7 +592,7 @@ export default function Review() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [editData, invoice, orgId, id, navigate, nextId, location.state]);
+  }, [editData, invoice, workspaceId, id, navigate, nextId, location.state]);
 
   if (loading) return <div className="p-8">Loading...</div>;
   if (!invoice) return null;

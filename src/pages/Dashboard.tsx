@@ -13,7 +13,7 @@ import { Search, ChevronDown, Calendar, SlidersHorizontal, ArrowUpDown } from 'l
 import { ResponsiveContainer, AreaChart, Area, XAxis, Tooltip, CartesianGrid, BarChart, Bar } from 'recharts';
 
 export default function Dashboard() {
-  const { orgId } = useAuth();
+  const { workspaceId } = useAuth();
   const navigate = useNavigate();
   const [invoices, setInvoices] = useState<any[]>([]);
   const [statusFilter, setStatusFilter] = useState('All statuses');
@@ -32,8 +32,8 @@ export default function Dashboard() {
   }, [statusFilter, searchQuery, filterStartDate, filterEndDate, sortColumn, sortDirection]);
 
   useEffect(() => {
-    if (!orgId) return;
-    const path = `organizations/${orgId}/invoices`;
+    if (!workspaceId) return;
+    const path = `workspaces/${workspaceId}/invoices`;
     const q = query(collection(db, path), orderBy('uploadedAt', 'desc'));
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -44,7 +44,7 @@ export default function Dashboard() {
     });
 
     return unsubscribe;
-  }, [orgId]);
+  }, [workspaceId]);
 
   const filteredInvoices = useMemo(() => {
     let result = invoices.filter(inv => {
@@ -129,17 +129,21 @@ export default function Dashboard() {
   }, [invoices]);
 
   const handleBulkStatusChange = async (newStatus: string) => {
-    if (!orgId || selectedInvoices.size === 0) return;
+    if (!workspaceId || selectedInvoices.size === 0) return;
     try {
-      const batch = writeBatch(db);
-      for (const id of Array.from(selectedInvoices)) {
-        const docRef = doc(db, "organizations", String(orgId), "invoices", String(id));
-        batch.update(docRef, { status: newStatus });
+      const ids = Array.from(selectedInvoices);
+      for (let i = 0; i < ids.length; i += 400) {
+        const batch = writeBatch(db);
+        const chunk = ids.slice(i, i + 400);
+        for (const id of chunk) {
+          const docRef = doc(db, "workspaces", String(workspaceId), "invoices", String(id));
+          batch.update(docRef, { status: newStatus });
+        }
+        await batch.commit();
       }
-      await batch.commit();
       setSelectedInvoices(new Set());
     } catch (e) {
-      handleFirestoreError(e, OperationType.WRITE, `organizations/${orgId}/invoices`);
+      handleFirestoreError(e, OperationType.WRITE, `workspaces/${workspaceId}/invoices`);
     }
   };
 

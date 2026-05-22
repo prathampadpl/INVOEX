@@ -1,15 +1,14 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/src/lib/store';
 import { auth, db, storage, functions } from '@/src/lib/firebase';
-import { collection, doc, getDoc, getDocs, setDoc } from 'firebase/firestore';
+import { collection, doc, getDocs, setDoc, onSnapshot } from 'firebase/firestore';
 import { ref, uploadBytes } from 'firebase/storage';
-import { httpsCallable } from 'firebase/functions';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
 
 export default function UploadBatch() {
-  const { orgId } = useAuth();
+  const { workspaceId } = useAuth();
   const [files, setFiles] = useState<File[]>([]);
   const [fileStatuses, setFileStatuses] = useState<Record<string, string>>({});
   const [isUploading, setIsUploading] = useState(false);
@@ -50,89 +49,70 @@ export default function UploadBatch() {
   const updateStatus = (fileName: string, status: string) =>
     setFileStatuses(cur => ({ ...cur, [fileName]: status }));
 
-  /**
-   * Upload flow (FIXED architecture):
-   *  1. POST /api/extract → receives invoiceId immediately (upload only, no pipeline)
-   *  2. Poll Firestore every 3s until status ≠ 'Extracting' (pipeline runs server-side)
-   *  3. Apply org rules to extracted data → merge back to Firestore
-   */
   const processFile = async (file: File, rules: any[]) => {
-    const token = await auth.currentUser?.getIdToken();
     updateStatus(file.name, '⬆️ Uploading...');
-    // Upload is now handled below in the single try/catch block with logs
     
-    const invoiceRef = doc(collection(db, `organizations/${orgId}/invoices`));
-    const invoiceId = invoiceRef.id;
-
-    const storedFilename = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-    const storagePath = `invoices/${orgId}/${storedFilename}`;
+    const uploadId = crypto.randomUUID();
+    const storagePath = `workspaces/${workspaceId}/uploads/${uploadId}`;
     const storageRef = ref(storage, storagePath);
-    const processInvoice = httpsCallable(functions, 'invoiceProcessorV3');
 
-    let extractedData: any = null;
     try {
-      console.log(`[${file.name}] Step 1: Uploading to Firebase Storage...`);
-      const startTime = Date.now();
-      
+      console.log(`[${file.name}] Uploading to ${storagePath}...`);
       await uploadBytes(storageRef, file, {
         contentType: file.type,
-        customMetadata: { orgId: orgId as string, uploadedBy: auth.currentUser!.uid, originalName: file.name }
+        customMetadata: { workspaceId: workspaceId as string, uploadedBy: auth.currentUser!.uid, originalName: file.name }
       });
       
-      console.log(`[${file.name}] Upload complete in ${Date.now() - startTime}ms`);
       updateStatus(file.name, '🤖 AI extraction in progress...');
-      console.log(`[${file.name}] Step 2: Calling Cloud Function invoiceProcessorV3...`);
       
-      const fnStartTime = Date.now();
-      const result = await processInvoice({
-        orgId,
-        invoiceId,
-        storagePath,
-        fileName: file.name,
-        fileType: file.type
+      // Wait for Firestore trigger to complete
+      const invoiceRef = doc(db, `workspaces/${workspaceId}/invoices`, uploadId);
+      
+      await new Promise<void>((resolve, reject) => {
+        const unsubscribe = onSnapshot(invoiceRef, async (snap) => {
+          if (!snap.exists()) return;
+          const data = snap.data();
+          if (data.status === 'Ready for Review') {
+            unsubscribe();
+            updateStatus(file.name, '📋 Applying rules...');
+            let processed = { ...data };
+            for (const rule of rules) {
+              try {
+                const { conditionField, conditionOperator, conditionValue, actionField, actionValue } = rule;
+                const v = String(processed[conditionField] ?? '').toLowerCase();
+                const c = conditionValue.toLowerCase();
+                const match = (conditionOperator === 'contains' && v.includes(c)) ||
+                              (conditionOperator === 'equals' && v === c) ||
+                              (conditionOperator === 'startsWith' && v.startsWith(c)) ||
+                              (conditionOperator === 'endsWith' && v.endsWith(c));
+                if (match) {
+                  processed[actionField] = ['gstRate', 'taxableAmount', 'cgst', 'sgst', 'igst', 'grandTotal',
+                    'advancePaid', 'balanceDue', 'roundOff'].includes(actionField)
+                    ? parseFloat(actionValue) : actionValue;
+                }
+              } catch {}
+            }
+            if (rules.length > 0) {
+              await setDoc(invoiceRef, processed, { merge: true });
+            }
+            updateStatus(file.name, `✅ Done`);
+            resolve();
+          } else if (data.status === 'Failed') {
+            unsubscribe();
+            reject(new Error(data.errorDetails || 'Extraction failed'));
+          }
+        });
       });
       
-      console.log(`[${file.name}] Cloud Function returned in ${Date.now() - fnStartTime}ms`, result.data);
-      extractedData = result.data;
     } catch (err: any) {
       console.error(`[${file.name}] ERROR details:`, err);
       throw new Error(err.message || 'Pipeline failed during processing.');
     }
-
-    if (!extractedData || extractedData.status === 'Failed') {
-      throw new Error(extractedData?.errorDetails || 'Pipeline failed.');
-    }
-
-    // Step 3: Apply rules
-    updateStatus(file.name, '📋 Applying rules...');
-    let processed = { ...extractedData };
-    for (const rule of rules) {
-      try {
-        const { conditionField, conditionOperator, conditionValue, actionField, actionValue } = rule;
-        const v = String(processed[conditionField] ?? '').toLowerCase();
-        const c = conditionValue.toLowerCase();
-        const match = (conditionOperator === 'contains' && v.includes(c)) ||
-                      (conditionOperator === 'equals' && v === c) ||
-                      (conditionOperator === 'startsWith' && v.startsWith(c)) ||
-                      (conditionOperator === 'endsWith' && v.endsWith(c));
-        if (match) {
-          processed[actionField] = ['gstRate', 'taxableAmount', 'cgst', 'sgst', 'igst', 'grandTotal',
-            'advancePaid', 'balanceDue', 'roundOff'].includes(actionField)
-            ? parseFloat(actionValue) : actionValue;
-        }
-      } catch {}
-    }
-
-    if (rules.length > 0) {
-      await setDoc(invoiceRef, processed, { merge: true });
-    }
-
-    updateStatus(file.name, `✅ Done — ${extractedData.status}`);
   };
 
   const processBatch = async () => {
     if (!files.length) { toast.error('No files selected.'); return; }
-    if (!orgId) { toast.error('No active organization. Try refreshing.'); return; }
+    if (!workspaceId) { toast.error('No active workspace. Try refreshing.'); return; }
 
     setIsUploading(true);
     setProgress(5);
@@ -140,7 +120,7 @@ export default function UploadBatch() {
 
     let rules: any[] = [];
     try {
-      const snap = await getDocs(collection(db, `organizations/${orgId}/rules`));
+      const snap = await getDocs(collection(db, `workspaces/${workspaceId}/rules`));
       rules = snap.docs.map(d => d.data());
     } catch {}
 

@@ -9,7 +9,7 @@ import { Download, Calendar, Loader2 } from 'lucide-react';
 import Papa from 'papaparse';
 
 export default function Export() {
-  const { orgId } = useAuth();
+  const { workspaceId } = useAuth();
   const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -19,8 +19,8 @@ export default function Export() {
   const [filterVendor, setFilterVendor] = useState('');
 
   useEffect(() => {
-    if (!orgId) return;
-    const path = `organizations/${orgId}/invoices`;
+    if (!workspaceId) return;
+    const path = `workspaces/${workspaceId}/invoices`;
     const q = query(collection(db, path), orderBy('uploadedAt', 'desc'));
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -32,7 +32,7 @@ export default function Export() {
     });
 
     return unsubscribe;
-  }, [orgId]);
+  }, [workspaceId]);
 
   const filteredInvoices = invoices.filter(i => {
      if (filterStatus !== 'All' && i.status !== filterStatus) return false;
@@ -84,15 +84,16 @@ export default function Export() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
     
     // Save Export History
     try {
-      const { setDoc, doc, collection } = await import('firebase/firestore');
+      const { addDoc, collection } = await import('firebase/firestore');
       const authModule = await import('@/src/lib/firebase'); // using auth from store wouldn't work async inside this easily
       const currentUser = authModule.auth.currentUser;
-      if (orgId && currentUser) {
-        await setDoc(doc(collection(db, `organizations/${orgId}/export_history`)), {
-          orgId,
+      if (workspaceId && currentUser) {
+        await addDoc(collection(db, `workspaces/${workspaceId}/export_history`), {
+          workspaceId,
           userId: currentUser.uid,
           filterParams: { filterStatus, filterVendor, filterStartDate, filterEndDate },
           format: 'CSV',

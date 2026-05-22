@@ -11,8 +11,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { toast } from 'sonner';
 
 export default function Settings() {
-  const { orgId, user, orgRole } = useAuth();
-  const isAdmin = orgRole === 'owner' || orgRole === 'admin';
+  const { workspaceId, user, workspaceRole } = useAuth();
+  const isAdmin = workspaceRole === 'owner' || workspaceRole === 'admin';
   const [rules, setRules] = useState<any[]>([]);
   
   const [conditionField, setConditionField] = useState('vendorName');
@@ -26,38 +26,37 @@ export default function Settings() {
   const [invites, setInvites] = useState<any[]>([]);
 
   useEffect(() => {
-    if (!orgId) return;
-    const q = query(collection(db, `organizations/${orgId}/rules`));
+    if (!workspaceId) return;
+    const q = query(collection(db, `workspaces/${workspaceId}/rules`));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setRules(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, (error) => handleFirestoreError(error, OperationType.LIST, `organizations/${orgId}/rules`));
+    }, (error) => handleFirestoreError(error, OperationType.LIST, `workspaces/${workspaceId}/rules`));
     return unsubscribe;
-  }, [orgId]);
+  }, [workspaceId]);
 
   useEffect(() => {
-    if (!orgId) return;
-    const membersQ = query(collection(db, `organizations/${orgId}/members`));
+    if (!workspaceId) return;
+    const membersQ = query(collection(db, `workspaces/${workspaceId}/members`));
     const unsubscribeMembers = onSnapshot(membersQ, (snapshot) => {
       setMembers(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, (error) => handleFirestoreError(error, OperationType.LIST, `organizations/${orgId}/members`));
+    }, (error) => handleFirestoreError(error, OperationType.LIST, `workspaces/${workspaceId}/members`));
     return unsubscribeMembers;
-  }, [orgId]);
+  }, [workspaceId]);
 
   useEffect(() => {
-    if (!orgId) return;
-    const invitesQ = query(collection(db, 'invites'), where('orgId', '==', orgId));
+    if (!workspaceId) return;
+    const invitesQ = query(collection(db, 'invites'), where('workspaceId', '==', workspaceId));
     const unsubscribeInvites = onSnapshot(invitesQ, (snapshot) => {
       setInvites(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'invites'));
     return unsubscribeInvites;
-  }, [orgId]);
+  }, [workspaceId]);
 
   const handleAddRule = async () => {
-    if (!orgId || !user) return;
+    if (!workspaceId || !user) return;
     try {
-      const docRef = doc(collection(db, `organizations/${orgId}/rules`));
-      await setDoc(docRef, {
-        orgId,
+      await addDoc(collection(db, `workspaces/${workspaceId}/rules`), {
+        workspaceId,
         conditionField,
         conditionOperator,
         conditionValue,
@@ -70,26 +69,25 @@ export default function Settings() {
       setConditionValue('');
       setActionValue('');
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, `organizations/${orgId}/rules`);
+      handleFirestoreError(error, OperationType.CREATE, `workspaces/${workspaceId}/rules`);
     }
   };
   
   const handleDeleteRule = async (id: string) => {
     try {
-      await deleteDoc(doc(db, `organizations/${orgId}/rules`, id));
+      await deleteDoc(doc(db, `workspaces/${workspaceId}/rules`, id));
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `organizations/${orgId}/rules/${id}`);
+      handleFirestoreError(error, OperationType.DELETE, `workspaces/${workspaceId}/rules/${id}`);
     }
   }
 
   const handleInvite = async () => {
-    if (!orgId || !user || !inviteEmail) return;
+    if (!workspaceId || !user || !inviteEmail) return;
     try {
-      const docRef = doc(collection(db, 'invites'));
-      const { orgName: authOrgName } = useAuth.getState();
-      await setDoc(docRef, {
-        orgId,
-        orgName: authOrgName || 'Organization',
+      const { workspaceName: authOrgName } = useAuth.getState();
+      await addDoc(collection(db, 'invites'), {
+        workspaceId,
+        workspaceName: authOrgName || 'Workspace',
         email: inviteEmail.toLowerCase().trim(),
         status: 'pending',
         invitedBy: user.uid,
@@ -104,9 +102,9 @@ export default function Settings() {
 
   const handleRemoveMember = async (id: string) => {
     try {
-      await deleteDoc(doc(db, `organizations/${orgId}/members`, id));
+      await deleteDoc(doc(db, `workspaces/${workspaceId}/members`, id));
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `organizations/${orgId}/members/${id}`);
+      handleFirestoreError(error, OperationType.DELETE, `workspaces/${workspaceId}/members/${id}`);
     }
   };
 
@@ -120,7 +118,7 @@ export default function Settings() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
-      <h1 className="text-3xl font-bold tracking-tight">Organization Settings</h1>
+      <h1 className="text-3xl font-bold tracking-tight">Workspace Settings</h1>
       
       <Card>
         <CardHeader>
@@ -255,7 +253,7 @@ export default function Settings() {
       <Card>
         <CardHeader>
           <CardTitle>Team Members & Invites</CardTitle>
-          <p className="text-sm text-neutral-500">Invite people to your organization. They will automatically join this organization when they sign up with the matching email.</p>
+          <p className="text-sm text-neutral-500">Invite people to your workspace. They will automatically join this workspace when they sign up with the matching email.</p>
         </CardHeader>
         <CardContent className="space-y-6">
           {isAdmin && (
