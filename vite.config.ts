@@ -12,6 +12,7 @@ export default defineConfig(({mode}) => {
   // We use the file checked into version control instead.
 
   return {
+    envPrefix: ['VITE_', 'GEMINI_', 'OPENROUTER_'],
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
