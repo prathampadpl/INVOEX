@@ -888,6 +888,7 @@ export default function Review() {
                         <th className="px-4 py-2 font-medium w-20">Unit</th>
                         <th className="px-4 py-2 font-medium w-24">Rate</th>
                         <th className="px-4 py-2 font-medium w-20">Disc</th>
+                        <th className="px-4 py-2 font-medium w-20">GST %</th>
                         <th className="px-4 py-2 font-medium w-28">Amount</th>
                       </tr>
                     </thead>
@@ -913,8 +914,10 @@ export default function Review() {
                             } else if (newItems[idx].rate) {
                               const disc = newItems[idx].discount || 0;
                               const isPercent = newItems[idx].discountType === 'percent';
+                              const gst = newItems[idx].gstRate || 0;
                               const sub = newItems[idx].quantity * newItems[idx].rate;
-                              newItems[idx].amount = Number((isPercent ? sub * (1 - disc/100) : sub - disc).toFixed(2));
+                              const postDisc = isPercent ? sub * (1 - disc/100) : sub - disc;
+                              newItems[idx].amount = Number((postDisc * (1 + gst/100)).toFixed(2));
                             }
                             setEditData({ ...editData, lineItems: newItems });
                           }} /></td>
@@ -931,8 +934,10 @@ export default function Review() {
                             } else if (newItems[idx].quantity) {
                               const disc = newItems[idx].discount || 0;
                               const isPercent = newItems[idx].discountType === 'percent';
+                              const gst = newItems[idx].gstRate || 0;
                               const sub = newItems[idx].quantity * newItems[idx].rate;
-                              newItems[idx].amount = Number((isPercent ? sub * (1 - disc/100) : sub - disc).toFixed(2));
+                              const postDisc = isPercent ? sub * (1 - disc/100) : sub - disc;
+                              newItems[idx].amount = Number((postDisc * (1 + gst/100)).toFixed(2));
                             }
                             setEditData({ ...editData, lineItems: newItems });
                           }} /></td>
@@ -940,9 +945,11 @@ export default function Review() {
                             <Input className="h-8 shadow-none w-14 px-1" type="number" value={item.discount || ''} onChange={(e) => {
                               const newItems = [...editData.lineItems];
                               newItems[idx].discount = Number(e.target.value);
-                              const sub = newItems[idx].quantity * newItems[idx].rate;
                               const isPercent = newItems[idx].discountType === 'percent';
-                              newItems[idx].amount = Number((isPercent ? sub * (1 - newItems[idx].discount/100) : sub - newItems[idx].discount).toFixed(2));
+                              const gst = newItems[idx].gstRate || 0;
+                              const sub = (newItems[idx].quantity || 0) * (newItems[idx].rate || 0);
+                              const postDisc = isPercent ? sub * (1 - newItems[idx].discount/100) : sub - newItems[idx].discount;
+                              newItems[idx].amount = Number((postDisc * (1 + gst/100)).toFixed(2));
                               setEditData({ ...editData, lineItems: newItems });
                             }} />
                             <select 
@@ -951,9 +958,11 @@ export default function Review() {
                               onChange={(e) => {
                                 const newItems = [...editData.lineItems];
                                 newItems[idx].discountType = e.target.value;
-                                const sub = newItems[idx].quantity * newItems[idx].rate;
                                 const isPercent = e.target.value === 'percent';
-                                newItems[idx].amount = Number((isPercent ? sub * (1 - (newItems[idx].discount||0)/100) : sub - (newItems[idx].discount||0)).toFixed(2));
+                                const gst = newItems[idx].gstRate || 0;
+                                const sub = (newItems[idx].quantity || 0) * (newItems[idx].rate || 0);
+                                const postDisc = isPercent ? sub * (1 - (newItems[idx].discount||0)/100) : sub - (newItems[idx].discount||0);
+                                newItems[idx].amount = Number((postDisc * (1 + gst/100)).toFixed(2));
                                 setEditData({ ...editData, lineItems: newItems });
                               }}
                             >
@@ -961,6 +970,18 @@ export default function Review() {
                               <option value="percent">%</option>
                               <option value="flat">₹</option>
                             </select>
+                          </td>
+                          <td className="px-2 py-1">
+                            <Input className="h-8 shadow-none w-16" type="number" value={item.gstRate || ''} onChange={(e) => {
+                              const newItems = [...editData.lineItems];
+                              newItems[idx].gstRate = Number(e.target.value);
+                              const isPercent = newItems[idx].discountType === 'percent';
+                              const gst = newItems[idx].gstRate || 0;
+                              const sub = (newItems[idx].quantity || 0) * (newItems[idx].rate || 0);
+                              const postDisc = isPercent ? sub * (1 - (newItems[idx].discount||0)/100) : sub - (newItems[idx].discount||0);
+                              newItems[idx].amount = Number((postDisc * (1 + gst/100)).toFixed(2));
+                              setEditData({ ...editData, lineItems: newItems });
+                            }} />
                           </td>
                           <td className="px-2 py-1"><Input className="h-8 shadow-none w-24" type="number" value={item.amount || ''} onChange={(e) => {
                             const newItems = [...editData.lineItems];
