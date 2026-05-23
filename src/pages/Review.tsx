@@ -878,8 +878,8 @@ export default function Review() {
               {(!editData.lineItems || editData.lineItems.length === 0) ? (
                 <div className="text-sm text-gray-500 italic">No line items extracted.</div>
               ) : (
-                <div className="rounded-md border overflow-hidden">
-                  <table className="w-full text-sm text-left">
+                <div className="rounded-md border overflow-x-auto">
+                  <table className="w-full text-sm text-left min-w-[850px]">
                     <thead className="bg-neutral-50 text-neutral-600 border-b">
                       <tr>
                         <th className="px-4 py-2 font-medium">Description</th>
