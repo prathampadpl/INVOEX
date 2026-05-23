@@ -1,1 +1,16 @@
-{"projectId":"prj_qT770GdDxcicV3pCXzrzBZGOEpbB","orgId":"team_UsJaik9fya7op6ANh3n2CcrU","projectName":"invoex"}
+{
+  "projectId": "prj_qT770GdDxcicV3pCXzrzBZGOEpbB",
+  "orgId": "team_UsJaik9fya7op6ANh3n2CcrU",
+  "projectName": "invoex",
+  "settings": {
+    "createdAt": 1779204230610,
+    "framework": "vite",
+    "devCommand": null,
+    "installCommand": null,
+    "buildCommand": null,
+    "outputDirectory": "dist",
+    "rootDirectory": null,
+    "directoryListing": false,
+    "nodeVersion": "24.x"
+  }
+}
