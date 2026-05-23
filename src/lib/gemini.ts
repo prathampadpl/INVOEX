@@ -1,4 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import { db } from './firebase';
 
 const systemPrompt = `You are an expert AI extraction system for invoices and receipts.
 Your task is to analyze the provided image/PDF and extract all relevant billing information into a structured JSON array.
@@ -6,16 +8,16 @@ If the document contains multiple distinct invoices (e.g., a 10-page PDF with 5 
 If it is a single invoice, return an array with one object.
 
 Output strictly valid JSON array of objects with these keys:
-- vendorName
-- vendorAddress
-- vendorGSTIN
-- buyerName
-- buyerAddress
-- buyerGSTIN
-- invoiceNumber
-- invoiceDate (YYYY-MM-DD)
-- dueDate (YYYY-MM-DD)
-- paymentTerms
+- vendorName (string)
+- vendorAddress (string)
+- vendorGSTIN (string)
+- buyerName (string)
+- buyerAddress (string)
+- buyerGSTIN (string)
+- invoiceNumber (string)
+- invoiceDate (string, format YYYY-MM-DD)
+- dueDate (string, format YYYY-MM-DD)
+- paymentTerms (string)
 - taxableAmount (number)
 - cgst (number)
 - sgst (number)
@@ -25,8 +27,10 @@ Output strictly valid JSON array of objects with these keys:
 - grandTotal (number)
 - advancePaid (number)
 - balanceDue (number)
-- paymentMode
-- lineItems (array of { description, hsnSac, quantity, unitPrice, amount, gstRate, cgst, sgst, igst })
+- paymentMode (string)
+- lineItems (array of objects with keys: description, hsnCode, quantity, unit, rate, amount, gstRate, cgst, sgst, igst)
+- confidenceScores (object where keys are each of the above field names (except lineItems) and values are integers from 0 to 100 representing your confidence level in that specific field's extraction)
+- doubtfulFields (array of string field names you are unsure about)
 
 If a field is not present or cannot be determined, use null or 0.
 Do NOT use markdown code blocks like \`\`\`json. Just return the raw JSON array.`;
@@ -54,7 +58,138 @@ function isExtractionUsable(data: any): boolean {
   return required.some(field => data[field] && data[field] !== 0 && data[field] !== '');
 }
 
-async function tryGeminiModel(modelName: string, base64Data: string, mimeType: string, signal: AbortSignal): Promise<{ data: any[], extractedBy: string }> {
+// Sanitize and populate confidence scores + doubtfulFields
+function sanitizeExtractionResult(arr: any[]): any[] {
+  const fields = [
+    'vendorName', 'vendorAddress', 'vendorGSTIN', 'buyerName', 'buyerAddress', 'buyerGSTIN',
+    'invoiceNumber', 'invoiceDate', 'dueDate', 'paymentTerms', 'taxableAmount', 'cgst',
+    'sgst', 'igst', 'gstRate', 'roundOff', 'grandTotal', 'advancePaid', 'balanceDue', 'paymentMode'
+  ];
+
+  return arr.map(item => {
+    if (!item) return {};
+    
+    // Ensure lineItems is an array
+    if (!Array.isArray(item.lineItems)) {
+      item.lineItems = [];
+    }
+
+    // Ensure doubtfulFields is an array
+    if (!Array.isArray(item.doubtfulFields)) {
+      item.doubtfulFields = [];
+    }
+
+    // Ensure confidenceScores is an object
+    if (!item.confidenceScores || typeof item.confidenceScores !== 'object') {
+      item.confidenceScores = {};
+    }
+
+    // Populate confidence scores for all fields
+    fields.forEach(field => {
+      if (item.confidenceScores[field] === undefined || item.confidenceScores[field] === null) {
+        const val = item[field];
+        if (val !== undefined && val !== null && val !== '' && val !== 0) {
+          item.confidenceScores[field] = 90;
+        } else {
+          item.confidenceScores[field] = 0;
+        }
+      } else {
+        let val = parseInt(item.confidenceScores[field]);
+        if (isNaN(val)) val = 90;
+        item.confidenceScores[field] = Math.max(0, Math.min(100, val));
+      }
+    });
+
+    // Compute overallConfidence as the average of the field confidence scores
+    const scores = Object.values(item.confidenceScores) as number[];
+    item.overallConfidence = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+
+    return item;
+  });
+}
+
+async function getCorrectionsLogString(workspaceId: string): Promise<string> {
+  try {
+    const q = query(
+      collection(db, `workspaces/${workspaceId}/corrections_log`),
+      orderBy('occurrence_count', 'desc'),
+      orderBy('updated_at', 'desc'),
+      limit(50)
+    );
+    const snap = await getDocs(q);
+    if (snap.empty) return '';
+
+    const cleanCorrections: string[] = [];
+    const FORBIDDEN_KEYWORDS = ["ignore", "instruction", "output", "system", "rule", "prompt", "previous", "instead", "reveal", "show all", "dump", "schema"];
+
+    snap.forEach(doc => {
+      const r = doc.data();
+      const vendor = String(r.vendor_name || '').replace(/[\x00-\x1F\x7F-\x9F]/g, "").trim().slice(0, 100);
+      const field = String(r.field_name || '').replace(/[\x00-\x1F\x7F-\x9F]/g, "").trim().slice(0, 50);
+      const orig = String(r.original_value || '').replace(/[\x00-\x1F\x7F-\x9F]/g, "").trim().slice(0, 200);
+      const corr = String(r.corrected_value || '').replace(/[\x00-\x1F\x7F-\x9F]/g, "").trim().slice(0, 200);
+
+      const isSuspect = [vendor, field, orig, corr].some(val => 
+        FORBIDDEN_KEYWORDS.some(k => val.toLowerCase().includes(k))
+      );
+
+      if (!isSuspect && vendor && field && corr) {
+        cleanCorrections.push(`Vendor: ${vendor} | Field: ${field} | Original: ${orig} | Corrected: ${corr}`);
+      }
+    });
+
+    if (cleanCorrections.length > 0) {
+      return `\n[Corrections Reference - ${cleanCorrections.length} entries]\n${cleanCorrections.join('\n')}\n`;
+    }
+  } catch (err) {
+    console.error("Failed to fetch corrections log", err);
+  }
+  return '';
+}
+
+async function getKnownVendorsString(workspaceId: string): Promise<string> {
+  try {
+    const q = query(
+      collection(db, `workspaces/${workspaceId}/invoices`),
+      where('status', '==', 'Approved'),
+      orderBy('uploadedAt', 'desc'),
+      limit(200)
+    );
+    const snap = await getDocs(q);
+    if (snap.empty) return '';
+
+    const vendorMap = new Map<string, string>();
+    snap.forEach(doc => {
+      const data = doc.data();
+      if (data.vendorName && data.vendorGSTIN) {
+        const name = String(data.vendorName).replace(/[\x00-\x1F\x7F-\x9F]/g, "").trim().slice(0, 100);
+        const gstin = String(data.vendorGSTIN).replace(/[\x00-\x1F\x7F-\x9F]/g, "").trim().slice(0, 20);
+        if (name && gstin) {
+          vendorMap.set(name, gstin);
+        }
+      }
+    });
+
+    if (vendorMap.size > 0) {
+      const cleanVendors = Array.from(vendorMap.entries()).map(([name, gstin]) => {
+        return `<vendor name="${name}" gstin="${gstin}" />`;
+      });
+      return `\n<known_vendors_reference>\nThe following is a list of known vendors and their GSTINs. Use this to correct spelling errors or OCR inaccuracies if the vendor name in the document matches one of these names.\n<vendors>\n${cleanVendors.join('\n')}\n</vendors>\n</known_vendors_reference>\n`;
+    }
+  } catch (err) {
+    console.error("Failed to fetch known vendors", err);
+  }
+  return '';
+}
+
+async function tryGeminiModel(
+  modelName: string,
+  base64Data: string,
+  mimeType: string,
+  correctionsLogString: string,
+  knownVendorsString: string,
+  signal: AbortSignal
+): Promise<{ data: any[], extractedBy: string }> {
   const fallbackGemini = ['AIzaS', 'yD397sDHir', '_cXzNHykcKQXKT', 'QjnG80BmW0'].join('');
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY || fallbackGemini;
   if (!apiKey) throw new Error('GEMINI_API_KEY is missing in frontend env');
@@ -69,7 +204,9 @@ async function tryGeminiModel(modelName: string, base64Data: string, mimeType: s
     }
   };
 
-  const result = await model.generateContent([systemPrompt, part], { requestOptions: { signal } as any } as any);
+  const finalPrompt = systemPrompt + correctionsLogString + knownVendorsString;
+
+  const result = await model.generateContent([finalPrompt, part], { requestOptions: { signal } as any } as any);
   const text = result.response.text();
   
   let cleanedText = text.trim();
@@ -80,21 +217,31 @@ async function tryGeminiModel(modelName: string, base64Data: string, mimeType: s
   
   const parsed = JSON.parse(cleanedText);
   const arr = Array.isArray(parsed) ? parsed : [parsed];
+  const sanitized = sanitizeExtractionResult(arr);
   
-  if (arr.length === 0 || !isExtractionUsable(arr[0])) {
+  if (sanitized.length === 0 || !isExtractionUsable(sanitized[0])) {
     throw new Error('EMPTY_EXTRACTION');
   }
   
-  return { data: arr, extractedBy: modelName };
+  return { data: sanitized, extractedBy: modelName };
 }
 
-async function tryOpenRouterModel(modelName: string, base64Data: string, mimeType: string, signal: AbortSignal): Promise<{ data: any[], extractedBy: string }> {
+async function tryOpenRouterModel(
+  modelName: string,
+  base64Data: string,
+  mimeType: string,
+  correctionsLogString: string,
+  knownVendorsString: string,
+  signal: AbortSignal
+): Promise<{ data: any[], extractedBy: string }> {
   const fallbackOR = ['sk-or-v1', '-42d5ecbe', '50dd005c0ba', '4a7eb846d8920', '2d9f480dd757b', 'ee3c644f3485', 'f864788'].join('');
   const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY || import.meta.env.OPENROUTER_API_KEY || fallbackOR;
   if (!apiKey) {
     console.warn('VITE_OPENROUTER_API_KEY is missing, skipping OpenRouter models');
     throw new Error('OPENROUTER_API_KEY is missing in frontend env');
   }
+
+  const finalPrompt = systemPrompt + correctionsLogString + knownVendorsString;
 
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
@@ -110,7 +257,7 @@ async function tryOpenRouterModel(modelName: string, base64Data: string, mimeTyp
         {
           role: "user",
           content: [
-            { type: "text", text: systemPrompt },
+            { type: "text", text: finalPrompt },
             { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Data}` } }
           ]
         }
@@ -134,12 +281,13 @@ async function tryOpenRouterModel(modelName: string, base64Data: string, mimeTyp
   
   const parsed = JSON.parse(cleanedText);
   const arr = Array.isArray(parsed) ? parsed : [parsed];
+  const sanitized = sanitizeExtractionResult(arr);
   
-  if (arr.length === 0 || !isExtractionUsable(arr[0])) {
+  if (sanitized.length === 0 || !isExtractionUsable(sanitized[0])) {
     throw new Error('EMPTY_EXTRACTION');
   }
   
-  return { data: arr, extractedBy: `openrouter/${modelName}` };
+  return { data: sanitized, extractedBy: `openrouter/${modelName}` };
 }
 
 async function tryModelWithTimeout(
@@ -180,14 +328,18 @@ export async function processWithAI(base64Data: string, mimeType: string, worksp
   ];
   
   const modelChain = isPDF ? pdfModels : imageModels;
+
+  // Fetch past corrections log and known vendors for self-learning loop context
+  const correctionsLogString = await getCorrectionsLogString(workspaceId);
+  const knownVendorsString = await getKnownVendorsString(workspaceId);
   
   for (const model of modelChain) {
     try {
       console.log(`[Pipeline] Trying ${model.name} for workspace ${workspaceId}`);
       if (model.type === 'gemini') {
-        return await tryModelWithTimeout((signal) => tryGeminiModel(model.name, base64Data, mimeType, signal));
+        return await tryModelWithTimeout((signal) => tryGeminiModel(model.name, base64Data, mimeType, correctionsLogString, knownVendorsString, signal));
       } else {
-        return await tryModelWithTimeout((signal) => tryOpenRouterModel(model.name, base64Data, mimeType, signal));
+        return await tryModelWithTimeout((signal) => tryOpenRouterModel(model.name, base64Data, mimeType, correctionsLogString, knownVendorsString, signal));
       }
     } catch (err: any) {
       if (err.message === 'EMPTY_EXTRACTION') {
