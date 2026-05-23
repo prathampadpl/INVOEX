@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/src/lib/store';
 import { auth, db, storage, functions } from '@/src/lib/firebase';
-import { collection, doc, getDocs, setDoc, onSnapshot } from 'firebase/firestore';
-import { ref, uploadBytes } from 'firebase/storage';
+import { collection, doc, getDocs, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
+import { processWithAI } from '@/src/lib/gemini';
 
 export default function UploadBatch() {
   const { workspaceId } = useAuth();
@@ -49,7 +50,7 @@ export default function UploadBatch() {
   const updateStatus = (fileName: string, status: string) =>
     setFileStatuses(cur => ({ ...cur, [fileName]: status }));
 
-  const processFile = async (file: File, rules: any[]) => {
+  const processFile = async (file: File) => {
     updateStatus(file.name, '⬆️ Uploading...');
     
     const uploadId = crypto.randomUUID();
@@ -58,55 +59,129 @@ export default function UploadBatch() {
     const storageRef = ref(storage, storagePath);
 
     try {
-      console.log(`[${file.name}] Uploading to ${storagePath}...`);
       await uploadBytes(storageRef, file, {
         contentType: file.type,
         customMetadata: { workspaceId: workspaceId as string, uploadedBy: auth.currentUser!.uid, originalName: file.name }
       });
       
+      const fileUrl = await getDownloadURL(storageRef);
+      const invoiceRef = doc(db, `workspaces/${workspaceId}/invoices/${uploadId}`);
+      
+      await setDoc(invoiceRef, {
+        status: 'Extracting',
+        storagePath: storagePath,
+        fileUrl,
+        originalName: file.name,
+        fileType: file.type,
+        updatedAt: Date.now(),
+        createdAt: Date.now(),
+        uploadedAt: Date.now(),
+      });
+
       updateStatus(file.name, '🤖 AI extraction in progress...');
       
-      // Wait for Firestore trigger to complete
-      const invoiceRef = doc(db, `workspaces/${workspaceId}/invoices`, uploadId);
-      
-      await new Promise<void>((resolve, reject) => {
-        const unsubscribe = onSnapshot(invoiceRef, async (snap) => {
-          if (!snap.exists()) return;
-          const data = snap.data();
-          if (data.status === 'Ready for Review') {
-            unsubscribe();
-            updateStatus(file.name, '📋 Applying rules...');
-            let processed = { ...data };
-            for (const rule of rules) {
-              try {
-                const { conditionField, conditionOperator, conditionValue, actionField, actionValue } = rule;
-                const v = String(processed[conditionField] ?? '').toLowerCase();
-                const c = conditionValue.toLowerCase();
-                const match = (conditionOperator === 'contains' && v.includes(c)) ||
-                              (conditionOperator === 'equals' && v === c) ||
-                              (conditionOperator === 'startsWith' && v.startsWith(c)) ||
-                              (conditionOperator === 'endsWith' && v.endsWith(c));
-                if (match) {
-                  processed[actionField] = ['gstRate', 'taxableAmount', 'cgst', 'sgst', 'igst', 'grandTotal',
-                    'advancePaid', 'balanceDue', 'roundOff'].includes(actionField)
-                    ? parseFloat(actionValue) : actionValue;
-                }
-              } catch {}
-            }
-            if (rules.length > 0) {
-              await setDoc(invoiceRef, processed, { merge: true });
-            }
-            updateStatus(file.name, `✅ Done`);
-            resolve();
-          } else if (data.status === 'Failed') {
-            unsubscribe();
-            reject(new Error(data.errorDetails || 'Extraction failed'));
-          }
-        });
+      const fileToBase64 = (f: File): Promise<string> => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(f);
+        reader.onload = () => resolve((reader.result as string).split(',')[1]);
+        reader.onerror = error => reject(error);
       });
+
+      const base64Data = await fileToBase64(file);
+      const { data: extractedDataList, extractedBy } = await processWithAI(base64Data, file.type, workspaceId);
+
+      const primaryInvoice = extractedDataList[0] || {};
       
+      const updatePayload = {
+        status: 'Ready for Review',
+        extractedBy,
+        vendorName: primaryInvoice.vendorName || '',
+        vendorAddress: primaryInvoice.vendorAddress || '',
+        vendorGSTIN: primaryInvoice.vendorGSTIN || '',
+        buyerName: primaryInvoice.buyerName || '',
+        buyerAddress: primaryInvoice.buyerAddress || '',
+        buyerGSTIN: primaryInvoice.buyerGSTIN || '',
+        invoiceNumber: primaryInvoice.invoiceNumber || '',
+        invoiceDate: primaryInvoice.invoiceDate || '',
+        dueDate: primaryInvoice.dueDate || '',
+        paymentTerms: primaryInvoice.paymentTerms || '',
+        taxableAmount: primaryInvoice.taxableAmount || 0,
+        cgst: primaryInvoice.cgst || 0,
+        sgst: primaryInvoice.sgst || 0,
+        igst: primaryInvoice.igst || 0,
+        gstRate: primaryInvoice.gstRate || 0,
+        roundOff: primaryInvoice.roundOff || 0,
+        grandTotal: primaryInvoice.grandTotal || 0,
+        advancePaid: primaryInvoice.advancePaid || 0,
+        balanceDue: primaryInvoice.balanceDue || 0,
+        paymentMode: primaryInvoice.paymentMode || '',
+        lineItems: primaryInvoice.lineItems || [],
+        confidenceScores: primaryInvoice.confidenceScores || {},
+        overallConfidence: primaryInvoice.overallConfidence || 0,
+        doubtfulFields: primaryInvoice.doubtfulFields || [],
+        validationErrors: primaryInvoice.validationErrors || [],
+        updatedAt: Date.now()
+      };
+
+      await updateDoc(invoiceRef, updatePayload);
+      
+      if (extractedDataList.length > 1) {
+        // Need to import writeBatch from firebase/firestore at the top of the file
+        const { writeBatch } = await import('firebase/firestore');
+        const batch = writeBatch(db);
+        
+        for (let i = 1; i < extractedDataList.length; i++) {
+          const siblingRef = doc(collection(db, `workspaces/${workspaceId}/invoices`));
+          const sibling = extractedDataList[i];
+          batch.set(siblingRef, {
+            storagePath: storagePath,
+            fileUrl: fileUrl,
+            batchParent: uploadId,
+            status: 'Ready for Review',
+            createdAt: Date.now(),
+            vendorName: sibling.vendorName || '',
+            vendorAddress: sibling.vendorAddress || '',
+            vendorGSTIN: sibling.vendorGSTIN || '',
+            buyerName: sibling.buyerName || '',
+            buyerAddress: sibling.buyerAddress || '',
+            buyerGSTIN: sibling.buyerGSTIN || '',
+            invoiceNumber: sibling.invoiceNumber || '',
+            invoiceDate: sibling.invoiceDate || '',
+            dueDate: sibling.dueDate || '',
+            paymentTerms: sibling.paymentTerms || '',
+            taxableAmount: sibling.taxableAmount || 0,
+            cgst: sibling.cgst || 0,
+            sgst: sibling.sgst || 0,
+            igst: sibling.igst || 0,
+            gstRate: sibling.gstRate || 0,
+            roundOff: sibling.roundOff || 0,
+            grandTotal: sibling.grandTotal || 0,
+            advancePaid: sibling.advancePaid || 0,
+            balanceDue: sibling.balanceDue || 0,
+            paymentMode: sibling.paymentMode || '',
+            lineItems: sibling.lineItems || [],
+            confidenceScores: sibling.confidenceScores || {},
+            overallConfidence: sibling.overallConfidence || 0,
+            doubtfulFields: sibling.doubtfulFields || [],
+            validationErrors: sibling.validationErrors || [],
+            updatedAt: Date.now()
+          });
+        }
+        await batch.commit();
+      }
+
+      updateStatus(file.name, `✅ Done (${extractedBy})`);
+
     } catch (err: any) {
       console.error(`[${file.name}] ERROR details:`, err);
+      try {
+        const invoiceRef = doc(db, `workspaces/${workspaceId}/invoices/${uploadId}`);
+        await updateDoc(invoiceRef, {
+          status: 'Failed',
+          errorDetails: err.message || 'Pipeline failed during processing.',
+          updatedAt: Date.now()
+        });
+      } catch {}
       throw new Error(err.message || 'Pipeline failed during processing.');
     }
   };
@@ -119,15 +194,9 @@ export default function UploadBatch() {
     setProgress(5);
     let done = 0, failed = 0;
 
-    let rules: any[] = [];
-    try {
-      const snap = await getDocs(collection(db, `workspaces/${workspaceId}/rules`));
-      rules = snap.docs.map(d => d.data());
-    } catch {}
-
     for (const file of files) {
       try {
-        await processFile(file, rules);
+        await processFile(file);
       } catch (err: any) {
         updateStatus(file.name, `❌ ${err.message}`);
         toast.error(`${file.name}: ${err.message}`);
