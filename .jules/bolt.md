@@ -1,0 +1,3 @@
+## 2024-05-24 - [Hoisting string manipulations and date computations out of array filters, and eliminating O(N) re-renders]
+**Learning:** Found an anti-pattern in the React rendering cycle where `invoices.filter` was executing `.getTime()` and string `toLowerCase()` conversions on every single iteration. Further, the JSX return statement had inline O(n) array `.filter` and `.flatMap` loops that were triggered on *every* render cycle (such as when pagination occurred).
+**Action:** Always hoist invariant object/string/date parsing out of array iterators, and pull inline JSX computations that iterate over large arrays into a memoized hook (like `useMemo`) that is bound to the relevant data updates instead of the UI update cycles.
