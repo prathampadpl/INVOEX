@@ -15,8 +15,8 @@ Output strictly valid JSON array of objects with these keys:
 - buyerAddress (string)
 - buyerGSTIN (string)
 - invoiceNumber (string)
-- invoiceDate (string, format YYYY-MM-DD)
-- dueDate (string, format YYYY-MM-DD)
+- invoiceDate (string, format YYYY-MM-DD. Note: In India, dates are written in DD/MM/YYYY or DD/MM/YY format. When parsing date strings with slashes or dashes (e.g. '7/04/2026', '25-12-26'), always interpret the first number as Day and the second number as Month, then convert to YYYY-MM-DD format. E.g. '7/04/2026' represents April 7, 2026 -> '2026-04-07'.)
+- dueDate (string, format YYYY-MM-DD. Note: In India, dates are written in DD/MM/YYYY or DD/MM/YY format. When parsing date strings with slashes or dashes (e.g. '7/04/2026', '25-12-26'), always interpret the first number as Day and the second number as Month, then convert to YYYY-MM-DD format. E.g. '7/04/2026' represents April 7, 2026 -> '2026-04-07'.)
 - paymentTerms (string)
 - taxableAmount (number)
 - cgst (number)
@@ -111,19 +111,22 @@ function sanitizeExtractionResult(arr: any[]): any[] {
 async function getCorrectionsLogString(workspaceId: string): Promise<string> {
   try {
     const db = getFirestore();
-    const snap = await db.collection(`workspaces/${workspaceId}/corrections_log`)
-      .orderBy('occurrence_count', 'desc')
-      .orderBy('updated_at', 'desc')
-      .limit(50)
-      .get();
-
+    const snap = await db.collection(`workspaces/${workspaceId}/corrections_log`).get();
     if (snap.empty) return '';
+
+    const sortedDocs = snap.docs.map(doc => doc.data()).sort((a, b) => {
+      const countA = a.occurrence_count || 1;
+      const countB = b.occurrence_count || 1;
+      if (countB !== countA) return countB - countA;
+      const timeA = a.updated_at || 0;
+      const timeB = b.updated_at || 0;
+      return timeB - timeA;
+    }).slice(0, 50);
 
     const cleanCorrections: string[] = [];
     const FORBIDDEN_KEYWORDS = ["ignore", "instruction", "output", "system", "rule", "prompt", "previous", "instead", "reveal", "show all", "dump", "schema"];
 
-    snap.forEach(doc => {
-      const r = doc.data();
+    sortedDocs.forEach(r => {
       const vendor = String(r.vendor_name || '').replace(/[\x00-\x1F\x7F-\x9F]/g, "").trim().slice(0, 100);
       const field = String(r.field_name || '').replace(/[\x00-\x1F\x7F-\x9F]/g, "").trim().slice(0, 50);
       const orig = String(r.original_value || '').replace(/[\x00-\x1F\x7F-\x9F]/g, "").trim().slice(0, 200);
@@ -150,17 +153,17 @@ async function getCorrectionsLogString(workspaceId: string): Promise<string> {
 async function getKnownVendorsString(workspaceId: string): Promise<string> {
   try {
     const db = getFirestore();
-    const snap = await db.collection(`workspaces/${workspaceId}/invoices`)
-      .where('status', '==', 'Approved')
-      .orderBy('uploadedAt', 'desc')
-      .limit(200)
-      .get();
-
+    const snap = await db.collection(`workspaces/${workspaceId}/invoices`).get();
     if (snap.empty) return '';
 
+    const approvedInvoices = snap.docs
+      .map(doc => doc.data())
+      .filter(data => data.status === 'Approved')
+      .sort((a, b) => (b.uploadedAt || 0) - (a.uploadedAt || 0))
+      .slice(0, 200);
+
     const vendorMap = new Map<string, string>();
-    snap.forEach(doc => {
-      const data = doc.data();
+    approvedInvoices.forEach(data => {
       if (data.vendorName && data.vendorGSTIN) {
         const name = String(data.vendorName).replace(/[\x00-\x1F\x7F-\x9F]/g, "").trim().slice(0, 100);
         const gstin = String(data.vendorGSTIN).replace(/[\x00-\x1F\x7F-\x9F]/g, "").trim().slice(0, 20);

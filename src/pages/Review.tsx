@@ -334,7 +334,142 @@ export default function Review() {
   }, [workspaceId, id]);
 
   const handleChange = (field: string, value: any) => {
-    setEditData((prev: any) => ({ ...prev, [field]: value }));
+    setEditData((prev: any) => {
+      const next = { ...prev, [field]: value };
+      
+      const parse = (val: any) => {
+        const n = parseFloat(val);
+        return isNaN(n) ? 0 : n;
+      };
+
+      let taxable = parse(next.taxableAmount);
+      let gstRate = parse(next.gstRate);
+      let cgst = parse(next.cgst);
+      let sgst = parse(next.sgst);
+      let igst = parse(next.igst);
+      let roundOff = parse(next.roundOff);
+      let advance = parse(next.advancePaid);
+
+      if (field === 'taxableAmount' || field === 'gstRate') {
+        const totalGst = Number((taxable * (gstRate / 100)).toFixed(2));
+        const vendorState = (next.vendorGSTIN || '').substring(0, 2);
+        const buyerState = (next.buyerGSTIN || '').substring(0, 2);
+        const isInterstate = vendorState && buyerState && vendorState !== buyerState;
+
+        if (isInterstate || (igst > 0 && cgst === 0 && sgst === 0)) {
+          igst = totalGst;
+          cgst = 0;
+          sgst = 0;
+        } else {
+          cgst = Number((totalGst / 2).toFixed(2));
+          sgst = Number((totalGst / 2).toFixed(2));
+          igst = 0;
+        }
+      } else if (field === 'cgst') {
+        sgst = cgst;
+        igst = 0;
+        if (taxable > 0) {
+          gstRate = Number((((cgst + sgst) / taxable) * 100).toFixed(2));
+        }
+      } else if (field === 'sgst') {
+        cgst = sgst;
+        igst = 0;
+        if (taxable > 0) {
+          gstRate = Number((((cgst + sgst) / taxable) * 100).toFixed(2));
+        }
+      } else if (field === 'igst') {
+        cgst = 0;
+        sgst = 0;
+        if (taxable > 0) {
+          gstRate = Number(((igst / taxable) * 100).toFixed(2));
+        }
+      }
+
+      const grandTotal = Number((taxable + cgst + sgst + igst + roundOff).toFixed(2));
+      const balanceDue = Number((grandTotal - advance).toFixed(2));
+
+      return {
+        ...next,
+        taxableAmount: taxable,
+        gstRate,
+        cgst,
+        sgst,
+        igst,
+        grandTotal,
+        balanceDue
+      };
+    });
+  };
+
+  const updateLineItemAndRecalculate = (idx: number, field: string, value: any) => {
+    const newItems = [...(editData.lineItems || [])];
+    newItems[idx] = { ...newItems[idx], [field]: value };
+
+    const item = newItems[idx];
+    const qty = parseFloat(item.quantity) || 0;
+    const rate = parseFloat(item.rate) || 0;
+    const disc = parseFloat(item.discount) || 0;
+    const isPercent = item.discountType === 'percent';
+    const gst = parseFloat(item.gstRate) || 0;
+
+    if (field === 'quantity' || field === 'rate' || field === 'discount' || field === 'discountType' || field === 'gstRate') {
+      const subtotal = qty * rate;
+      const taxableLine = isPercent ? subtotal * (1 - disc / 100) : subtotal - disc;
+      item.amount = Number((taxableLine * (1 + gst / 100)).toFixed(2));
+    }
+
+    let totalTaxable = 0;
+    let totalCgst = 0;
+    let totalSgst = 0;
+    let totalIgst = 0;
+
+    const vendorState = (editData.vendorGSTIN || invoice?.vendorGSTIN || '').substring(0, 2);
+    const buyerState = (editData.buyerGSTIN || invoice?.buyerGSTIN || '').substring(0, 2);
+    const isInterstate = vendorState && buyerState && vendorState !== buyerState;
+
+    newItems.forEach(it => {
+      const q = parseFloat(it.quantity) || 0;
+      const r = parseFloat(it.rate) || 0;
+      const d = parseFloat(it.discount) || 0;
+      const pct = it.discountType === 'percent';
+      const g = parseFloat(it.gstRate) || 0;
+
+      const sub = q * r;
+      const taxLine = pct ? sub * (1 - d / 100) : sub - d;
+      const lineTax = taxLine * (g / 100);
+
+      totalTaxable += taxLine;
+      if (isInterstate) {
+        totalIgst += lineTax;
+      } else {
+        totalCgst += lineTax / 2;
+        totalSgst += lineTax / 2;
+      }
+    });
+
+    totalTaxable = Number(totalTaxable.toFixed(2));
+    totalCgst = Number(totalCgst.toFixed(2));
+    totalSgst = Number(totalSgst.toFixed(2));
+    totalIgst = Number(totalIgst.toFixed(2));
+
+    const totalTax = totalCgst + totalSgst + totalIgst;
+    const avgGstRate = totalTaxable > 0 ? Number(((totalTax / totalTaxable) * 100).toFixed(2)) : 0;
+    const roundOff = parseFloat(editData.roundOff) || 0;
+    const grandTotal = Number((totalTaxable + totalTax + roundOff).toFixed(2));
+    const advance = parseFloat(editData.advancePaid) || 0;
+    const balanceDue = Number((grandTotal - advance).toFixed(2));
+
+    setEditData((prev: any) => ({
+      ...prev,
+      lineItems: newItems,
+      taxableAmount: totalTaxable,
+      cgst: totalCgst,
+      sgst: totalSgst,
+      igst: totalIgst,
+      gstRate: avgGstRate,
+      grandTotal,
+      balanceDue
+    }));
   };
 
   const isDateInvalid = (dateStr: string | undefined): string | null => {
@@ -896,75 +1031,17 @@ export default function Review() {
                       {editData.lineItems.map((item: any, idx: number) => {
                         return (
                         <tr key={idx} className="bg-white">
-                          <td className="px-2 py-1"><Input className="h-8 shadow-none" value={item.description || ''} onChange={(e) => {
-                            const newItems = [...editData.lineItems];
-                            newItems[idx].description = e.target.value;
-                            setEditData({ ...editData, lineItems: newItems });
-                          }} /></td>
-                          <td className="px-2 py-1"><Input className="h-8 shadow-none w-20" value={item.hsnCode || ''} onChange={(e) => {
-                            const newItems = [...editData.lineItems];
-                            newItems[idx].hsnCode = e.target.value;
-                            setEditData({ ...editData, lineItems: newItems });
-                          }} /></td>
-                          <td className="px-2 py-1"><Input className="h-8 shadow-none w-16" type="number" value={item.quantity || ''} onChange={(e) => {
-                            const newItems = [...editData.lineItems];
-                            newItems[idx].quantity = Number(e.target.value);
-                            if (newItems[idx].amount && !newItems[idx].rate && newItems[idx].quantity) {
-                              newItems[idx].rate = Number((newItems[idx].amount / newItems[idx].quantity).toFixed(2));
-                            } else if (newItems[idx].rate) {
-                              const disc = newItems[idx].discount || 0;
-                              const isPercent = newItems[idx].discountType === 'percent';
-                              const gst = newItems[idx].gstRate || 0;
-                              const sub = newItems[idx].quantity * newItems[idx].rate;
-                              const postDisc = isPercent ? sub * (1 - disc/100) : sub - disc;
-                              newItems[idx].amount = Number((postDisc * (1 + gst/100)).toFixed(2));
-                            }
-                            setEditData({ ...editData, lineItems: newItems });
-                          }} /></td>
-                          <td className="px-2 py-1"><Input className="h-8 shadow-none w-16" value={item.unit || ''} onChange={(e) => {
-                            const newItems = [...editData.lineItems];
-                            newItems[idx].unit = e.target.value;
-                            setEditData({ ...editData, lineItems: newItems });
-                          }} /></td>
-                          <td className="px-2 py-1"><Input className="h-8 shadow-none w-20" type="number" value={item.rate || ''} onChange={(e) => {
-                            const newItems = [...editData.lineItems];
-                            newItems[idx].rate = Number(e.target.value);
-                            if (newItems[idx].amount && !newItems[idx].quantity && newItems[idx].rate) {
-                              newItems[idx].quantity = Number((newItems[idx].amount / newItems[idx].rate).toFixed(2));
-                            } else if (newItems[idx].quantity) {
-                              const disc = newItems[idx].discount || 0;
-                              const isPercent = newItems[idx].discountType === 'percent';
-                              const gst = newItems[idx].gstRate || 0;
-                              const sub = newItems[idx].quantity * newItems[idx].rate;
-                              const postDisc = isPercent ? sub * (1 - disc/100) : sub - disc;
-                              newItems[idx].amount = Number((postDisc * (1 + gst/100)).toFixed(2));
-                            }
-                            setEditData({ ...editData, lineItems: newItems });
-                          }} /></td>
+                          <td className="px-2 py-1"><Input className="h-8 shadow-none" value={item.description || ''} onChange={(e) => updateLineItemAndRecalculate(idx, 'description', e.target.value)} /></td>
+                          <td className="px-2 py-1"><Input className="h-8 shadow-none w-20" value={item.hsnCode || ''} onChange={(e) => updateLineItemAndRecalculate(idx, 'hsnCode', e.target.value)} /></td>
+                          <td className="px-2 py-1"><Input className="h-8 shadow-none w-16" type="number" value={item.quantity || ''} onChange={(e) => updateLineItemAndRecalculate(idx, 'quantity', Number(e.target.value))} /></td>
+                          <td className="px-2 py-1"><Input className="h-8 shadow-none w-16" value={item.unit || ''} onChange={(e) => updateLineItemAndRecalculate(idx, 'unit', e.target.value)} /></td>
+                          <td className="px-2 py-1"><Input className="h-8 shadow-none w-20" type="number" value={item.rate || ''} onChange={(e) => updateLineItemAndRecalculate(idx, 'rate', Number(e.target.value))} /></td>
                           <td className="px-2 py-1 flex items-center gap-1">
-                            <Input className="h-8 shadow-none w-14 px-1" type="number" value={item.discount || ''} onChange={(e) => {
-                              const newItems = [...editData.lineItems];
-                              newItems[idx].discount = Number(e.target.value);
-                              const isPercent = newItems[idx].discountType === 'percent';
-                              const gst = newItems[idx].gstRate || 0;
-                              const sub = (newItems[idx].quantity || 0) * (newItems[idx].rate || 0);
-                              const postDisc = isPercent ? sub * (1 - newItems[idx].discount/100) : sub - newItems[idx].discount;
-                              newItems[idx].amount = Number((postDisc * (1 + gst/100)).toFixed(2));
-                              setEditData({ ...editData, lineItems: newItems });
-                            }} />
+                            <Input className="h-8 shadow-none w-14 px-1" type="number" value={item.discount || ''} onChange={(e) => updateLineItemAndRecalculate(idx, 'discount', Number(e.target.value))} />
                             <select 
                               className="h-8 border rounded text-[10px] w-9 focus:outline-none" 
                               value={item.discountType || 'none'} 
-                              onChange={(e) => {
-                                const newItems = [...editData.lineItems];
-                                newItems[idx].discountType = e.target.value;
-                                const isPercent = e.target.value === 'percent';
-                                const gst = newItems[idx].gstRate || 0;
-                                const sub = (newItems[idx].quantity || 0) * (newItems[idx].rate || 0);
-                                const postDisc = isPercent ? sub * (1 - (newItems[idx].discount||0)/100) : sub - (newItems[idx].discount||0);
-                                newItems[idx].amount = Number((postDisc * (1 + gst/100)).toFixed(2));
-                                setEditData({ ...editData, lineItems: newItems });
-                              }}
+                              onChange={(e) => updateLineItemAndRecalculate(idx, 'discountType', e.target.value)}
                             >
                               <option value="none">-</option>
                               <option value="percent">%</option>
@@ -972,22 +1049,9 @@ export default function Review() {
                             </select>
                           </td>
                           <td className="px-2 py-1">
-                            <Input className="h-8 shadow-none w-16" type="number" value={item.gstRate || ''} onChange={(e) => {
-                              const newItems = [...editData.lineItems];
-                              newItems[idx].gstRate = Number(e.target.value);
-                              const isPercent = newItems[idx].discountType === 'percent';
-                              const gst = newItems[idx].gstRate || 0;
-                              const sub = (newItems[idx].quantity || 0) * (newItems[idx].rate || 0);
-                              const postDisc = isPercent ? sub * (1 - (newItems[idx].discount||0)/100) : sub - (newItems[idx].discount||0);
-                              newItems[idx].amount = Number((postDisc * (1 + gst/100)).toFixed(2));
-                              setEditData({ ...editData, lineItems: newItems });
-                            }} />
+                            <Input className="h-8 shadow-none w-16" type="number" value={item.gstRate || ''} onChange={(e) => updateLineItemAndRecalculate(idx, 'gstRate', Number(e.target.value))} />
                           </td>
-                          <td className="px-2 py-1"><Input className="h-8 shadow-none w-24" type="number" value={item.amount || ''} onChange={(e) => {
-                            const newItems = [...editData.lineItems];
-                            newItems[idx].amount = Number(e.target.value);
-                            setEditData({ ...editData, lineItems: newItems });
-                          }} /></td>
+                          <td className="px-2 py-1"><Input className="h-8 shadow-none w-24" type="number" value={item.amount || ''} onChange={(e) => updateLineItemAndRecalculate(idx, 'amount', Number(e.target.value))} /></td>
                         </tr>
                       )})}
                     </tbody>
