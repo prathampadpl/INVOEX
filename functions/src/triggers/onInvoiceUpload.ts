@@ -1,7 +1,7 @@
 import { onObjectFinalized } from 'firebase-functions/v2/storage';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
-import { processWithGemini } from '../utils/gemini';
+import { processWithAI } from '../utils/gemini';
 
 const db = getFirestore();
 
@@ -45,14 +45,15 @@ export const onInvoiceUpload = onObjectFinalized(
       const bucket = getStorage().bucket(fileBucket);
       const [buffer] = await bucket.file(filePath).download();
 
-      // Step 2: Send to Gemini
-      const extractedDataList = await processWithGemini(buffer, contentType || 'application/pdf', workspaceId);
+      // Step 2: Send to AI Pipeline
+      const { data: extractedDataList, extractedBy } = await processWithAI(buffer, contentType || 'application/pdf', workspaceId);
 
       // Bug 1 Fix: Explicitly map the output to avoid data loss on split invoices
       const primaryInvoice = extractedDataList[0] || {};
       
       const updatePayload = {
         status: 'Ready for Review',
+        extractedBy,
         vendorName: primaryInvoice.vendorName || '',
         vendorAddress: primaryInvoice.vendorAddress || '',
         vendorGSTIN: primaryInvoice.vendorGSTIN || '',
@@ -132,11 +133,21 @@ export const onInvoiceUpload = onObjectFinalized(
 
     } catch (err: any) {
       console.error('[Pipeline] Extraction failed:', err);
-      await invoiceRef.update({
-        status: 'Failed',
-        errorDetails: err.message || 'Pipeline failed during processing.',
-        updatedAt: Date.now()
-      });
+      if (err.code === 'ALL_MODELS_EXHAUSTED' || err.message === 'ALL_MODELS_EXHAUSTED') {
+        await invoiceRef.update({
+          status: 'Queued',
+          queuedAt: Date.now(),
+          retryCount: 0,
+          lastError: 'All AI models exhausted',
+          updatedAt: Date.now()
+        });
+      } else {
+        await invoiceRef.update({
+          status: 'Failed',
+          errorDetails: err.message || 'Pipeline failed during processing.',
+          updatedAt: Date.now()
+        });
+      }
     }
   }
 );

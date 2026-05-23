@@ -12,17 +12,19 @@ import { Brain, TrendingDown, Layers, Settings2, AlertTriangle } from 'lucide-re
 import { toast } from 'sonner';
 
 const LAYER_COLORS: Record<string, string> = {
-  'tesseract':    '#6366f1',
-  'paddle':       '#8b5cf6',
-  'gemini-flash': '#f59e0b',
-  'gemini-pro':   '#ef4444',
+  'gemini-2.5-flash': '#10b981', // Emerald
+  'gemini-2.0-flash': '#3b82f6', // Blue
+  'gemini-2.0-flash-lite': '#8b5cf6', // Purple
+  'openrouter/qwen/qwen-2.5-vl-72b-instruct:free': '#f59e0b', // Amber
+  'openrouter/meta-llama/llama-3.2-90b-vision-instruct:free': '#ef4444', // Red
 };
 
 const LAYER_LABELS: Record<string, string> = {
-  'tesseract':    'Layer 1 — Tesseract',
-  'paddle':       'Layer 2 — PaddleOCR',
-  'gemini-flash': 'Layer 3a — Gemini Flash',
-  'gemini-pro':   'Layer 3b — Gemini Pro',
+  'gemini-2.5-flash': 'Layer 1 — Gemini 2.5 Flash',
+  'gemini-2.0-flash': 'Layer 2 — Gemini 2.0 Flash',
+  'gemini-2.0-flash-lite': 'Layer 3 — Gemini Flash Lite',
+  'openrouter/qwen/qwen-2.5-vl-72b-instruct:free': 'Fallback A — Qwen 2.5 VL',
+  'openrouter/meta-llama/llama-3.2-90b-vision-instruct:free': 'Fallback B — LLaMA 3.2 Vision',
 };
 
 export default function Analytics() {
@@ -284,76 +286,6 @@ export default function Analytics() {
         </CardContent>
       </Card>
 
-      {/* Threshold Configuration (Admin only) */}
-      {isAdmin && (
-        <Card className="shadow-sm border-indigo-100">
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Settings2 className="w-5 h-5 text-indigo-500" />
-              <CardTitle>Pipeline Confidence Thresholds</CardTitle>
-            </div>
-            <p className="text-sm text-gray-500">
-              Configure when the pipeline advances to the next layer. Higher thresholds = higher accuracy but more Gemini API usage.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid md:grid-cols-3 gap-6">
-              <div className="space-y-2 p-4 border rounded-lg bg-indigo-50/40">
-                <Label className="text-xs font-bold uppercase text-indigo-600">Layer 1 — Tesseract</Label>
-                <p className="text-[11px] text-gray-500">Minimum OCR confidence to use Tesseract text as Gemini context.</p>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="number"
-                    min={0} max={100}
-                    value={editThresholds.layer1}
-                    onChange={e => setEditThresholds(p => ({ ...p, layer1: Number(e.target.value) }))}
-                    className="w-20"
-                  />
-                  <span className="text-sm text-gray-500">%</span>
-                </div>
-              </div>
-              <div className="space-y-2 p-4 border rounded-lg bg-purple-50/40">
-                <Label className="text-xs font-bold uppercase text-purple-600">Layer 2 — PaddleOCR</Label>
-                <p className="text-[11px] text-gray-500">Minimum confidence from PaddleOCR to use as Gemini context (stub).</p>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="number"
-                    min={0} max={100}
-                    value={editThresholds.layer2}
-                    onChange={e => setEditThresholds(p => ({ ...p, layer2: Number(e.target.value) }))}
-                    className="w-20"
-                  />
-                  <span className="text-sm text-gray-500">%</span>
-                </div>
-              </div>
-              <div className="space-y-2 p-4 border rounded-lg bg-amber-50/40">
-                <Label className="text-xs font-bold uppercase text-amber-700">Layer 3a — Gemini Flash</Label>
-                <p className="text-[11px] text-gray-500">Min extraction confidence before escalating to Gemini Pro.</p>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="number"
-                    min={0} max={100}
-                    value={editThresholds.layer3a}
-                    onChange={e => setEditThresholds(p => ({ ...p, layer3a: Number(e.target.value) }))}
-                    className="w-20"
-                  />
-                  <span className="text-sm text-gray-500">%</span>
-                </div>
-              </div>
-            </div>
-            <Button
-              onClick={handleSaveThresholds}
-              disabled={savingThresholds}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white"
-            >
-              {savingThresholds ? 'Saving...' : 'Save Thresholds'}
-            </Button>
-            <p className="text-xs text-gray-400">
-              Current live thresholds: L1={thresholds.layer1}%, L2={thresholds.layer2}%, L3a={thresholds.layer3a}%
-            </p>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }
