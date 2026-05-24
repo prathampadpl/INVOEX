@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
 import { processWithAI } from '@/src/lib/gemini';
+import { PDFDocument } from 'pdf-lib';
 
 const compressImage = (file: File, maxW = 2000, maxH = 2000, quality = 0.85): Promise<Blob> => {
   return new Promise((resolve) => {
@@ -143,8 +144,9 @@ export default function UploadBatch() {
         uploadedAt: Date.now(),
       });
 
-      updateStatus(file.name, '🤖 AI extraction in progress...');
-      
+      let extractedDataList: any[] = [];
+      let finalExtractedBy = '';
+
       const fileToBase64 = (f: Blob | File): Promise<string> => new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.readAsDataURL(f);
@@ -152,14 +154,57 @@ export default function UploadBatch() {
         reader.onerror = error => reject(error);
       });
 
-      const base64Data = await fileToBase64(uploadPayload);
-      const { data: extractedDataList, extractedBy } = await processWithAI(base64Data, payloadType, workspaceId);
+      const isPDF = payloadType.toLowerCase().includes('pdf') || file.name.toLowerCase().endsWith('.pdf');
+
+      if (isPDF) {
+        try {
+          const fileBuffer = await uploadPayload.arrayBuffer();
+          const pdfDoc = await PDFDocument.load(fileBuffer, { ignoreEncryption: true });
+          const totalPages = pdfDoc.getPageCount();
+          
+          if (totalPages > 5) {
+            updateStatus(file.name, `🤖 AI extraction in progress (${totalPages} pages)...`);
+            const chunkSize = 3; // Keep chunks small for browser memory safety and payload limits
+            
+            for (let start = 0; start < totalPages; start += chunkSize) {
+              const end = Math.min(start + chunkSize, totalPages);
+              updateStatus(file.name, `🤖 Extracting pages ${start + 1} to ${end}...`);
+              
+              const chunkPdf = await PDFDocument.create();
+              const indices = Array.from({ length: end - start }, (_, i) => start + i);
+              const copiedPages = await chunkPdf.copyPages(pdfDoc, indices);
+              copiedPages.forEach(p => chunkPdf.addPage(p));
+              const chunkBytes = await chunkPdf.save({ useObjectStreams: false });
+              const chunkBlob = new Blob([chunkBytes], { type: 'application/pdf' });
+              
+              const chunkBase64 = await fileToBase64(chunkBlob);
+              const chunkResult = await processWithAI(chunkBase64, 'application/pdf', workspaceId);
+              
+              if (chunkResult && chunkResult.data) {
+                extractedDataList.push(...chunkResult.data);
+                finalExtractedBy = chunkResult.extractedBy;
+              }
+            }
+          }
+        } catch (pdfErr) {
+          console.warn('Failed to parse/chunk PDF on client, falling back to full file processing:', pdfErr);
+        }
+      }
+
+      // If not chunked (or chunking failed/skipped)
+      if (extractedDataList.length === 0) {
+        updateStatus(file.name, '🤖 AI extraction in progress...');
+        const base64Data = await fileToBase64(uploadPayload);
+        const result = await processWithAI(base64Data, payloadType, workspaceId);
+        extractedDataList = result.data;
+        finalExtractedBy = result.extractedBy;
+      }
 
       const primaryInvoice = extractedDataList[0] || {};
       
       const updatePayload = {
         status: 'Ready for Review',
-        extractedBy,
+        extractedBy: finalExtractedBy || 'client-side',
         vendorName: primaryInvoice.vendorName || '',
         vendorAddress: primaryInvoice.vendorAddress || '',
         vendorGSTIN: primaryInvoice.vendorGSTIN || '',
@@ -191,7 +236,6 @@ export default function UploadBatch() {
       await updateDoc(invoiceRef, updatePayload);
       
       if (extractedDataList.length > 1) {
-        // Need to import writeBatch from firebase/firestore at the top of the file
         const { writeBatch } = await import('firebase/firestore');
         const batch = writeBatch(db);
         
@@ -235,7 +279,7 @@ export default function UploadBatch() {
         await batch.commit();
       }
 
-      updateStatus(file.name, `✅ Done (${extractedBy})`);
+      updateStatus(file.name, `✅ Done (${finalExtractedBy || 'client-side'})`);
 
     } catch (err: any) {
       console.error(`[${file.name}] ERROR details:`, err);
@@ -306,7 +350,7 @@ export default function UploadBatch() {
               </svg>
             </div>
             <h3 className="text-lg font-semibold">Click to upload or drag and drop</h3>
-            <p className="text-sm text-neutral-500 mt-2">PDF, PNG, JPG, WEBP, HEIC, TXT, or DOCX · Max 10MB per file · Up to 10 files</p>
+            <p className="text-sm text-neutral-500 mt-2">PDF, PNG, JPG, WEBP, HEIC, TXT, or DOCX · Up to 50MB for PDFs (chunked) · Up to 10 files</p>
           </div>
 
           {files.length > 0 && (

@@ -1,6 +1,11 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleAIFileManager } from '@google/generative-ai/server';
+import { PDFDocument } from 'pdf-lib';
 import OpenAI from 'openai';
 import { getFirestore } from 'firebase-admin/firestore';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 
 const systemPrompt = `You are an expert AI extraction system for invoices and receipts.
 Your task is to analyze the provided image/PDF and extract all relevant billing information into a structured JSON array.
@@ -199,33 +204,78 @@ async function tryGeminiModel(
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({ model: modelName });
   
-  const part = {
-    inlineData: {
-      data: buffer.toString('base64'),
-      mimeType
+  const useFileApi = buffer.length > 2 * 1024 * 1024; // > 2MB
+  let tempFilePath: string | null = null;
+  let fileUploadName: string | null = null;
+  
+  try {
+    let part: any;
+    if (useFileApi) {
+      const fileManager = new GoogleAIFileManager(apiKey);
+      const ext = mimeType.toLowerCase().includes('pdf') ? '.pdf' : '.jpg';
+      tempFilePath = path.join(os.tmpdir(), `gemini-upload-${Date.now()}-${Math.random().toString(36).substring(7)}${ext}`);
+      fs.writeFileSync(tempFilePath, buffer);
+      
+      console.log(`[Pipeline] File size ${buffer.length} bytes > 2MB, uploading via Files API...`);
+      const uploadResult = await fileManager.uploadFile(tempFilePath, {
+        mimeType: mimeType,
+        displayName: "Upload Document",
+      });
+      fileUploadName = uploadResult.file.name;
+      
+      part = {
+        fileData: {
+          fileUri: uploadResult.file.uri,
+          mimeType: uploadResult.file.mimeType
+        }
+      };
+    } else {
+      part = {
+        inlineData: {
+          data: buffer.toString('base64'),
+          mimeType
+        }
+      };
     }
-  };
 
-  const finalPrompt = systemPrompt + correctionsLogString + knownVendorsString;
-
-  const result = await model.generateContent([finalPrompt, part], { requestOptions: { signal } as any } as any);
-  const text = result.response.text();
-  
-  let cleanedText = text.trim();
-  if (cleanedText.startsWith('```json')) {
-    cleanedText = cleanedText.replace(/^```json/, '');
-    cleanedText = cleanedText.replace(/```$/, '');
+    const finalPrompt = systemPrompt + correctionsLogString + knownVendorsString;
+    const result = await model.generateContent([finalPrompt, part], { requestOptions: { signal } as any } as any);
+    const text = result.response.text();
+    
+    let cleanedText = text.trim();
+    if (cleanedText.startsWith('```json')) {
+      cleanedText = cleanedText.replace(/^```json/, '');
+      cleanedText = cleanedText.replace(/```$/, '');
+    }
+    
+    const parsed = JSON.parse(cleanedText);
+    const arr = Array.isArray(parsed) ? parsed : [parsed];
+    const sanitized = sanitizeExtractionResult(arr);
+    
+    if (sanitized.length === 0 || !isExtractionUsable(sanitized[0])) {
+      throw new Error('EMPTY_EXTRACTION');
+    }
+    
+    return { data: sanitized, extractedBy: modelName };
+  } finally {
+    // Clean up local temp file
+    if (tempFilePath && fs.existsSync(tempFilePath)) {
+      try {
+        fs.unlinkSync(tempFilePath);
+      } catch (e) {
+        console.warn('Failed to delete temp file:', e);
+      }
+    }
+    // Clean up Gemini remote file
+    if (fileUploadName) {
+      try {
+        const fileManager = new GoogleAIFileManager(apiKey);
+        await fileManager.deleteFile(fileUploadName);
+      } catch (e) {
+        console.warn('Failed to delete file from Gemini storage:', e);
+      }
+    }
   }
-  
-  const parsed = JSON.parse(cleanedText);
-  const arr = Array.isArray(parsed) ? parsed : [parsed];
-  const sanitized = sanitizeExtractionResult(arr);
-  
-  if (sanitized.length === 0 || !isExtractionUsable(sanitized[0])) {
-    throw new Error('EMPTY_EXTRACTION');
-  }
-  
-  return { data: sanitized, extractedBy: modelName };
 }
 
 async function tryOpenRouterModel(
@@ -518,7 +568,7 @@ function recalculateAndValidateMath(invoice: any): any {
   return invoice;
 }
 
-export async function processWithAI(buffer: Buffer, mimeType: string, workspaceId: string): Promise<{ data: any[], extractedBy: string }> {
+export async function processSingleBufferWithAI(buffer: Buffer, mimeType: string, workspaceId: string): Promise<{ data: any[], extractedBy: string }> {
   const isPDF = mimeType.toLowerCase().includes('pdf');
   
   const imageModels = [
@@ -578,4 +628,53 @@ export async function processWithAI(buffer: Buffer, mimeType: string, workspaceI
   const e = new Error('ALL_MODELS_EXHAUSTED');
   (e as any).code = 'ALL_MODELS_EXHAUSTED';
   throw e;
+}
+
+export async function processWithAI(buffer: Buffer, mimeType: string, workspaceId: string): Promise<{ data: any[], extractedBy: string }> {
+  const isPDF = mimeType.toLowerCase().includes('pdf');
+  
+  if (isPDF) {
+    try {
+      const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
+      const totalPages = pdfDoc.getPageCount();
+      
+      if (totalPages > 5) {
+        console.log(`[Pipeline] Multi-page PDF detected (${totalPages} pages). Processing in sequential chunks of 5 pages...`);
+        const chunkSize = 5;
+        const allExtractedInvoices: any[] = [];
+        let finalExtractedBy = 'gemini-chunked';
+        
+        for (let start = 0; start < totalPages; start += chunkSize) {
+          const end = Math.min(start + chunkSize, totalPages);
+          console.log(`[Pipeline] Extracting chunk pages ${start + 1} to ${end}...`);
+          
+          const chunkPdf = await PDFDocument.create();
+          const indices = Array.from({ length: end - start }, (_, i) => start + i);
+          const copiedPages = await chunkPdf.copyPages(pdfDoc, indices);
+          copiedPages.forEach(p => chunkPdf.addPage(p));
+          const chunkBuffer = Buffer.from(await chunkPdf.save({ useObjectStreams: false }));
+          
+          try {
+            const result = await processSingleBufferWithAI(chunkBuffer, mimeType, workspaceId);
+            if (result && result.data) {
+              allExtractedInvoices.push(...result.data);
+              finalExtractedBy = result.extractedBy;
+            }
+          } catch (chunkErr) {
+            console.error(`[Pipeline] Failed to process chunk pages ${start + 1} to ${end}:`, chunkErr);
+          }
+        }
+        
+        if (allExtractedInvoices.length === 0) {
+          throw new Error('ALL_CHUNKS_FAILED_OR_EMPTY');
+        }
+        
+        return { data: allExtractedInvoices, extractedBy: `${finalExtractedBy} (chunked)` };
+      }
+    } catch (pdfErr) {
+      console.warn('[Pipeline] Failed to inspect PDF structure with pdf-lib, falling back to full file processing:', pdfErr);
+    }
+  }
+  
+  return processSingleBufferWithAI(buffer, mimeType, workspaceId);
 }
