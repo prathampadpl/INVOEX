@@ -8,6 +8,58 @@ import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
 import { processWithAI } from '@/src/lib/gemini';
 
+const compressImage = (file: File, maxW = 2000, maxH = 2000, quality = 0.85): Promise<Blob> => {
+  return new Promise((resolve) => {
+    if (!file.type.startsWith('image/')) {
+      resolve(file);
+      return;
+    }
+
+    const img = new Image();
+    img.src = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(img.src);
+      let width = img.width;
+      let height = img.height;
+
+      if (width > maxW || height > maxH) {
+        if (width > height) {
+          height = Math.round((height * maxW) / width);
+          width = maxW;
+        } else {
+          width = Math.round((width * maxH) / height);
+          height = maxH;
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(file);
+        return;
+      }
+
+      ctx.drawImage(img, 0, 0, width, height);
+      canvas.toBlob(
+        (blob) => {
+          if (blob) {
+            resolve(blob);
+          } else {
+            resolve(file);
+          }
+        },
+        'image/jpeg',
+        quality
+      );
+    };
+    img.onerror = () => {
+      resolve(file);
+    };
+  });
+};
+
 export default function UploadBatch() {
   const { workspaceId } = useAuth();
   const [files, setFiles] = useState<File[]>([]);
@@ -51,6 +103,19 @@ export default function UploadBatch() {
     setFileStatuses(cur => ({ ...cur, [fileName]: status }));
 
   const processFile = async (file: File) => {
+    let uploadPayload: Blob | File = file;
+    let payloadType = file.type;
+
+    if (file.type.startsWith('image/')) {
+      updateStatus(file.name, '⚡ Compressing...');
+      try {
+        uploadPayload = await compressImage(file);
+        payloadType = 'image/jpeg';
+      } catch (e) {
+        console.warn('Image compression failed, using original file', e);
+      }
+    }
+
     updateStatus(file.name, '⬆️ Uploading...');
     
     const uploadId = crypto.randomUUID();
@@ -59,8 +124,8 @@ export default function UploadBatch() {
     const storageRef = ref(storage, storagePath);
 
     try {
-      await uploadBytes(storageRef, file, {
-        contentType: file.type,
+      await uploadBytes(storageRef, uploadPayload, {
+        contentType: payloadType,
         customMetadata: { workspaceId: workspaceId as string, uploadedBy: auth.currentUser!.uid, originalName: file.name }
       });
       
@@ -72,7 +137,7 @@ export default function UploadBatch() {
         storagePath: storagePath,
         fileUrl,
         originalName: file.name,
-        fileType: file.type,
+        fileType: payloadType,
         updatedAt: Date.now(),
         createdAt: Date.now(),
         uploadedAt: Date.now(),
@@ -80,15 +145,15 @@ export default function UploadBatch() {
 
       updateStatus(file.name, '🤖 AI extraction in progress...');
       
-      const fileToBase64 = (f: File): Promise<string> => new Promise((resolve, reject) => {
+      const fileToBase64 = (f: Blob | File): Promise<string> => new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.readAsDataURL(f);
         reader.onload = () => resolve((reader.result as string).split(',')[1]);
         reader.onerror = error => reject(error);
       });
 
-      const base64Data = await fileToBase64(file);
-      const { data: extractedDataList, extractedBy } = await processWithAI(base64Data, file.type, workspaceId);
+      const base64Data = await fileToBase64(uploadPayload);
+      const { data: extractedDataList, extractedBy } = await processWithAI(base64Data, payloadType, workspaceId);
 
       const primaryInvoice = extractedDataList[0] || {};
       
