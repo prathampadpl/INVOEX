@@ -757,7 +757,7 @@ export default function Review() {
   };
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col space-y-6 max-h-screen">
+    <div className="w-full max-w-full h-[calc(100vh-8rem)] flex flex-col space-y-6 max-h-screen overflow-hidden">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Button variant="ghost" onClick={() => navigate('/dashboard')} title="Back to Dashboard">← Back</Button>

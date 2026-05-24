@@ -135,7 +135,7 @@ export default function Analytics() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8 pb-12">
+    <div className="w-full max-w-6xl mx-auto space-y-8 pb-12">
       {/* Header */}
       <div className="flex flex-col items-start gap-1">
         <div className="text-indigo-600 font-bold text-[10px] tracking-widest uppercase mb-1">Admin</div>
@@ -246,7 +246,7 @@ export default function Analytics() {
           {fieldConfAvg.length === 0 ? (
             <p className="text-sm text-gray-400 italic py-8 text-center">No confidence score data yet.</p>
           ) : (
-            <div className="border rounded-lg overflow-hidden">
+            <div className="border rounded-lg overflow-x-auto">
               <Table>
                 <TableHeader className="bg-gray-50">
                   <TableRow>

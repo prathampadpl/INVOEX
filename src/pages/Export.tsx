@@ -107,7 +107,7 @@ export default function Export() {
   };
 
   return (
-    <div className="space-y-8 max-w-[1200px] mx-auto pb-12">
+    <div className="w-full max-w-[1200px] mx-auto space-y-8 pb-12">
       <div className="flex flex-col items-start gap-1">
          <div className="text-blue-600 font-bold text-[10px] tracking-widest uppercase mb-1">Export</div>
          <h1 className="text-3xl font-extrabold tracking-tight text-gray-900 mb-2">Download invoice data</h1>
@@ -159,49 +159,51 @@ export default function Export() {
         </CardContent>
       </Card>
 
-      <Card className="shadow-sm border-gray-200">
+      <Card className="w-full shadow-sm border-gray-200">
          <CardHeader className="pb-4">
             <CardTitle className="text-base font-bold text-gray-900 mb-1">Preview table</CardTitle>
             <p className="text-sm text-gray-500">First 10 rows that match your export filters.</p>
          </CardHeader>
          <CardContent>
-            <Table>
-               <TableHeader>
-                  <TableRow className="border-gray-100">
-                     <TableHead className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Invoice #</TableHead>
-                     <TableHead className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Vendor</TableHead>
-                     <TableHead className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Date</TableHead>
-                     <TableHead className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Status</TableHead>
-                     <TableHead className="text-[10px] font-bold text-gray-500 uppercase tracking-wider text-right">Total</TableHead>
-                  </TableRow>
-               </TableHeader>
-               <TableBody>
-                  {loading ? (
-                     <TableRow>
-                        <TableCell colSpan={5} className="text-center py-12">
-                           <Loader2 className="h-6 w-6 animate-spin mx-auto text-gray-400 mb-2" />
-                           <span className="text-sm text-gray-500">Loading data...</span>
-                        </TableCell>
+            <div className="w-full overflow-x-auto">
+               <Table>
+                  <TableHeader>
+                     <TableRow className="border-gray-100">
+                        <TableHead className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Invoice #</TableHead>
+                        <TableHead className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Vendor</TableHead>
+                        <TableHead className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Date</TableHead>
+                        <TableHead className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Status</TableHead>
+                        <TableHead className="text-[10px] font-bold text-gray-500 uppercase tracking-wider text-right">Total</TableHead>
                      </TableRow>
-                  ) : filteredInvoices.length === 0 ? (
-                     <TableRow>
-                        <TableCell colSpan={5} className="text-center text-gray-400 py-12 text-sm">
-                           No rows match this export.
-                        </TableCell>
-                     </TableRow>
-                  ) : (
-                     filteredInvoices.slice(0, 10).map((inv) => (
-                        <TableRow key={inv.id} className="border-gray-100">
-                           <TableCell className="font-semibold text-gray-900 text-sm whitespace-nowrap">{inv.invoiceNumber}</TableCell>
-                           <TableCell className="font-medium text-gray-600 text-sm whitespace-nowrap">{inv.vendorName}</TableCell>
-                           <TableCell className="text-gray-500 text-sm whitespace-nowrap">{inv.invoiceDate}</TableCell>
-                           <TableCell className="text-gray-500 text-sm whitespace-nowrap">{inv.status}</TableCell>
-                           <TableCell className="text-right text-gray-900 font-medium text-sm whitespace-nowrap">₹{(inv.grandTotal || 0).toFixed(2)}</TableCell>
+                  </TableHeader>
+                  <TableBody>
+                     {loading ? (
+                        <TableRow>
+                           <TableCell colSpan={5} className="text-center py-12">
+                              <Loader2 className="h-6 w-6 animate-spin mx-auto text-gray-400 mb-2" />
+                              <span className="text-sm text-gray-500">Loading data...</span>
+                           </TableCell>
                         </TableRow>
-                     ))
-                  )}
-               </TableBody>
-            </Table>
+                     ) : filteredInvoices.length === 0 ? (
+                        <TableRow>
+                           <TableCell colSpan={5} className="text-center text-gray-400 py-12 text-sm">
+                              No rows match this export.
+                           </TableCell>
+                        </TableRow>
+                     ) : (
+                        filteredInvoices.slice(0, 10).map((inv) => (
+                           <TableRow key={inv.id} className="border-gray-100">
+                              <TableCell className="font-semibold text-gray-900 text-sm whitespace-nowrap">{inv.invoiceNumber}</TableCell>
+                              <TableCell className="font-medium text-gray-600 text-sm whitespace-nowrap">{inv.vendorName}</TableCell>
+                              <TableCell className="text-gray-500 text-sm whitespace-nowrap">{inv.invoiceDate}</TableCell>
+                              <TableCell className="text-gray-500 text-sm whitespace-nowrap">{inv.status}</TableCell>
+                              <TableCell className="text-right text-gray-900 font-medium text-sm whitespace-nowrap">₹{(inv.grandTotal || 0).toFixed(2)}</TableCell>
+                           </TableRow>
+                        ))
+                     )}
+                  </TableBody>
+               </Table>
+            </div>
          </CardContent>
       </Card>
     </div>

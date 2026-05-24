@@ -117,7 +117,7 @@ export default function Settings() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="w-full max-w-5xl mx-auto space-y-6">
       <h1 className="text-3xl font-bold tracking-tight">Workspace Settings</h1>
       
       <Card>
@@ -210,7 +210,7 @@ export default function Settings() {
             </div>
           </div>
           
-          <div className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
+          <div className="border border-gray-200 rounded-lg overflow-x-auto bg-white shadow-sm">
             <Table>
               <TableHeader className="bg-gray-50">
                 <TableRow>
@@ -273,7 +273,7 @@ export default function Settings() {
               <h3 className="font-semibold text-lg">Active Members</h3>
               {!isAdmin && <span className="text-xs text-gray-500">Only admins can manage members.</span>}
             </div>
-            <div className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
+            <div className="border border-gray-200 rounded-lg overflow-x-auto bg-white shadow-sm">
               <Table>
                 <TableHeader className="bg-gray-50">
                   <TableRow>
@@ -304,7 +304,7 @@ export default function Settings() {
 
           <div className="space-y-4">
             <h3 className="font-semibold text-lg">Pending Invites</h3>
-            <div className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
+            <div className="border border-gray-200 rounded-lg overflow-x-auto bg-white shadow-sm">
               <Table>
                 <TableHeader className="bg-gray-50">
                   <TableRow>
