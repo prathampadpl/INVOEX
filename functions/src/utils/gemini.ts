@@ -598,6 +598,8 @@ export async function processSingleBufferWithAI(buffer: Buffer, mimeType: string
   const correctionsLogString = await getCorrectionsLogString(workspaceId);
   const knownVendorsString = await getKnownVendorsString(workspaceId);
   
+  let emptyExtractionCount = 0;
+
   for (const model of modelChain) {
     try {
       console.log(`[Pipeline] Trying ${model.name} for workspace ${workspaceId}`);
@@ -620,6 +622,7 @@ export async function processSingleBufferWithAI(buffer: Buffer, mimeType: string
     } catch (err: any) {
       if (err.message === 'EMPTY_EXTRACTION') {
         console.warn(`[Pipeline] ${model.name} returned unusable data, trying next`);
+        emptyExtractionCount++;
         continue;
       }
       
@@ -632,7 +635,13 @@ export async function processSingleBufferWithAI(buffer: Buffer, mimeType: string
     }
   }
   
-  const e = new Error('ALL_MODELS_EXHAUSTED');
+  if (emptyExtractionCount === modelChain.length) {
+    const e = new Error('No invoice data found in this file.');
+    (e as any).code = 'NO_INVOICE_DATA_FOUND';
+    throw e;
+  }
+
+  const e = new Error('All AI models failed to process the document.');
   (e as any).code = 'ALL_MODELS_EXHAUSTED';
   throw e;
 }
