@@ -9,7 +9,7 @@ import * as os from 'os';
 
 const systemPrompt = `You are an expert AI extraction system for invoices and receipts.
 Your task is to analyze the provided image/PDF and extract all relevant billing information into a structured JSON array.
-If the document contains multiple distinct invoices (e.g., a 10-page PDF with 5 different invoices), return an array of objects, one for each invoice.
+If the document contains multiple distinct invoices (e.g., a 10-page PDF with 5 different invoices, OR a single image/page containing multiple small receipts/invoices stitched together), return an array of objects, one for EACH distinct invoice.
 If it is a single invoice, return an array with one object.
 
 Output strictly valid JSON array of objects with these keys:
@@ -531,14 +531,21 @@ function recalculateAndValidateMath(invoice: any): any {
     const gstRate = parse(invoice.gstRate);
     const totalGst = Number((totalTaxable * (gstRate / 100)).toFixed(2));
 
-    if (isInterstate || (parse(invoice.igst) > 0 && parse(invoice.cgst) === 0 && parse(invoice.sgst) === 0)) {
-      totalIgst = totalGst;
-      totalCgst = 0;
-      totalSgst = 0;
+    if (totalTaxable > 0 && gstRate > 0) {
+      if (isInterstate || (parse(invoice.igst) > 0 && parse(invoice.cgst) === 0 && parse(invoice.sgst) === 0)) {
+        totalIgst = totalGst;
+        totalCgst = 0;
+        totalSgst = 0;
+      } else {
+        totalCgst = Number((totalGst / 2).toFixed(2));
+        totalSgst = Number((totalGst / 2).toFixed(2));
+        totalIgst = 0;
+      }
     } else {
-      totalCgst = Number((totalGst / 2).toFixed(2));
-      totalSgst = Number((totalGst / 2).toFixed(2));
-      totalIgst = 0;
+      // If we can't reliably recalculate, preserve the extracted values
+      totalCgst = parse(invoice.cgst);
+      totalSgst = parse(invoice.sgst);
+      totalIgst = parse(invoice.igst);
     }
   }
 
