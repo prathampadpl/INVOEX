@@ -46,8 +46,7 @@ export default function Review() {
       try {
         const q = query(
           collection(db, `workspaces/${workspaceId}/corrections_log`),
-          where('vendor_name', '==', currentVendorName),
-          orderBy('updated_at', 'desc')
+          where('vendor_name', '==', currentVendorName)
         );
         const snapshot = await getDocs(q);
         const bestCorrections: Record<string, { value: string, count: number }> = {};
@@ -147,7 +146,7 @@ export default function Review() {
 
     return (
       <div className="space-y-1 relative">
-        <Label>{label}</Label>
+        <Label className="flex items-center">{label} <ConfidenceBadge field={field} /></Label>
         <div className="relative">
           <Input 
              value={value || ''} 
@@ -741,7 +740,7 @@ export default function Review() {
 
     return (
       <div className="space-y-1">
-        <Label>{label}</Label>
+        <Label className="flex items-center">{label} <ConfidenceBadge field={field} /></Label>
         <Input 
            value={editData[field] || ''} 
            onChange={(e) => handleChange(field, e.target.value)} 
@@ -849,7 +848,7 @@ export default function Review() {
           </CardContent>
         </Card>
         
-        <Card className="h-full flex flex-col border shadow-sm">
+        <Card className="h-full flex flex-col border shadow-sm min-w-0 overflow-hidden">
           <CardHeader className="py-3 px-4 border-b bg-neutral-50 flex flex-row items-center justify-between">
             <div className="flex flex-col gap-1">
               <CardTitle className="text-sm font-medium">Extracted Data</CardTitle>
@@ -899,11 +898,9 @@ export default function Review() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <SuggestionInput field="vendorName" label="Vendor Name" value={editData.vendorName} options={historicalVendors} />
-                <ConfidenceBadge field="vendorName" />
               </div>
               <div>
                 {renderFlaggedInput('vendorGSTIN', 'Vendor GSTIN')}
-                <ConfidenceBadge field="vendorGSTIN" />
               </div>
               <div className="col-span-2 space-y-1">
                 <Label className="flex items-center">Vendor Address <ConfidenceBadge field="vendorAddress" /></Label>
@@ -917,11 +914,9 @@ export default function Review() {
               </div>
               <div>
                 <SuggestionInput field="buyerName" label="Buyer Name" value={editData.buyerName} options={historicalBuyers} />
-                <ConfidenceBadge field="buyerName" />
               </div>
               <div>
                 {renderFlaggedInput('buyerGSTIN', 'Buyer GSTIN')}
-                <ConfidenceBadge field="buyerGSTIN" />
               </div>
               <div className="col-span-2 space-y-1">
                 <Label className="flex items-center">Buyer Address <ConfidenceBadge field="buyerAddress" /></Label>
@@ -959,31 +954,31 @@ export default function Review() {
 
             <div className="border-t pt-4 grid grid-cols-2 gap-4">
                <div className="space-y-1">
-                <Label>Taxable Amount</Label>
+                <Label className="flex items-center">Taxable Amount <ConfidenceBadge field="taxableAmount" /></Label>
                 <Input type="number" value={editData.taxableAmount || ''} onChange={(e) => handleChange('taxableAmount', parseFloat(e.target.value))} />
               </div>
               <div className="space-y-1">
-                <Label>GST Rate (%)</Label>
+                <Label className="flex items-center">GST Rate (%) <ConfidenceBadge field="gstRate" /></Label>
                 <Input type="number" value={editData.gstRate || ''} onChange={(e) => handleChange('gstRate', parseFloat(e.target.value))} />
               </div>
               <div className="space-y-1">
-                <Label>CGST</Label>
+                <Label className="flex items-center">CGST <ConfidenceBadge field="cgst" /></Label>
                 <Input type="number" value={editData.cgst || ''} onChange={(e) => handleChange('cgst', parseFloat(e.target.value))} />
               </div>
               <div className="space-y-1">
-                <Label>SGST</Label>
+                <Label className="flex items-center">SGST <ConfidenceBadge field="sgst" /></Label>
                 <Input type="number" value={editData.sgst || ''} onChange={(e) => handleChange('sgst', parseFloat(e.target.value))} />
               </div>
               <div className="space-y-1">
-                <Label>IGST</Label>
+                <Label className="flex items-center">IGST <ConfidenceBadge field="igst" /></Label>
                 <Input type="number" value={editData.igst || ''} onChange={(e) => handleChange('igst', parseFloat(e.target.value))} />
               </div>
               <div className="space-y-1">
-                <Label>Round Off</Label>
+                <Label className="flex items-center">Round Off <ConfidenceBadge field="roundOff" /></Label>
                 <Input type="number" value={editData.roundOff || ''} onChange={(e) => handleChange('roundOff', parseFloat(e.target.value))} />
               </div>
               <div className="space-y-1">
-                <Label className="font-bold text-gray-900">Grand Total</Label>
+                <Label className="font-bold text-gray-900 flex items-center">Grand Total <ConfidenceBadge field="grandTotal" /></Label>
                 <Input type="number" className="font-bold bg-neutral-50" value={editData.grandTotal || ''} onChange={(e) => {
                   const val = parseFloat(e.target.value);
                   const cleanVal = isNaN(val) ? 0 : val;
@@ -991,7 +986,7 @@ export default function Review() {
                 }} />
               </div>
               <div className="space-y-1">
-                <Label>Advance Paid</Label>
+                <Label className="flex items-center">Advance Paid <ConfidenceBadge field="advancePaid" /></Label>
                 <Input type="number" className="bg-blue-50/30 font-medium" value={editData.advancePaid || ''} onChange={(e) => {
                   const val = parseFloat(e.target.value);
                   const cleanVal = isNaN(val) ? 0 : val;
@@ -999,11 +994,11 @@ export default function Review() {
                 }} />
               </div>
               <div className="space-y-1">
-                <Label>Balance Due</Label>
+                <Label className="flex items-center">Balance Due <ConfidenceBadge field="balanceDue" /></Label>
                 <Input type="number" className="bg-amber-50/30 font-bold" value={editData.balanceDue || ''} onChange={(e) => handleChange('balanceDue', parseFloat(e.target.value))} />
               </div>
               <div className="space-y-1">
-                <Label>Payment Mode</Label>
+                <Label className="flex items-center">Payment Mode <ConfidenceBadge field="paymentMode" /></Label>
                 <Input value={editData.paymentMode || ''} onChange={(e) => handleChange('paymentMode', e.target.value)} placeholder="Cash, UPI, etc." />
               </div>
             </div>

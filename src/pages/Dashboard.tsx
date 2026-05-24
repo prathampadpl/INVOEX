@@ -298,43 +298,45 @@ export default function Dashboard() {
           <CardTitle className="text-base font-bold text-gray-900">Top Vendors</CardTitle>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow className="border-gray-50 hover:bg-transparent">
-                <TableHead className="text-[10px] font-bold text-gray-500 uppercase tracking-wider h-8">Vendor Name</TableHead>
-                <TableHead className="text-[10px] font-bold text-gray-500 uppercase tracking-wider h-8">Invoice Count</TableHead>
-                <TableHead className="text-[10px] font-bold text-gray-500 uppercase tracking-wider h-8">Avg Confidence</TableHead>
-                <TableHead className="text-[10px] font-bold text-gray-500 uppercase tracking-wider h-8 text-right px-4">Performance</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-               {topVendors.length > 0 ? topVendors.map((vendor, idx) => (
-                 <TableRow key={idx} className="group">
-                   <TableCell className="font-semibold text-sm text-gray-900">{vendor.name}</TableCell>
-                   <TableCell className="text-gray-600 font-medium">{vendor.count}</TableCell>
-                   <TableCell>
-                     <div className="flex items-center gap-2">
-                       <span className="text-sm font-medium">{vendor.avgConf.toFixed(0)}%</span>
-                       <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden hidden sm:block">
-                         <div className={`h-full ${vendor.avgConf > 90 ? 'bg-emerald-500' : vendor.avgConf > 75 ? 'bg-blue-500' : 'bg-amber-500'}`} style={{ width: `${vendor.avgConf}%` }} />
-                       </div>
-                     </div>
-                   </TableCell>
-                   <TableCell className="text-right">
-                     <Button variant="ghost" size="sm" onClick={() => {
-                        setSearchQuery(vendor.name);
-                     }} className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 h-8 text-xs font-semibold px-3">
-                       View History
-                     </Button>
-                   </TableCell>
-                 </TableRow>
-               )) : (
-                 <TableRow>
-                   <TableCell colSpan={4} className="text-center text-gray-400 py-12 text-sm bg-gray-50/50">No vendor data available yet.</TableCell>
-                 </TableRow>
-               )}
-            </TableBody>
-          </Table>
+          <div className="w-full overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="border-gray-50 hover:bg-transparent">
+                  <TableHead className="text-[10px] font-bold text-gray-500 uppercase tracking-wider h-8">Vendor Name</TableHead>
+                  <TableHead className="text-[10px] font-bold text-gray-500 uppercase tracking-wider h-8">Invoice Count</TableHead>
+                  <TableHead className="text-[10px] font-bold text-gray-500 uppercase tracking-wider h-8">Avg Confidence</TableHead>
+                  <TableHead className="text-[10px] font-bold text-gray-500 uppercase tracking-wider h-8 text-right px-4">Performance</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                 {topVendors.length > 0 ? topVendors.map((vendor, idx) => (
+                    <TableRow key={idx} className="group">
+                      <TableCell className="font-semibold text-sm text-gray-900">{vendor.name}</TableCell>
+                      <TableCell className="text-gray-600 font-medium">{vendor.count}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">{vendor.avgConf.toFixed(0)}%</span>
+                          <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden hidden sm:block">
+                            <div className={`h-full ${vendor.avgConf > 90 ? 'bg-emerald-500' : vendor.avgConf > 75 ? 'bg-blue-500' : 'bg-amber-500'}`} style={{ width: `${vendor.avgConf}%` }} />
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="sm" onClick={() => {
+                           setSearchQuery(vendor.name);
+                        }} className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 h-8 text-xs font-semibold px-3">
+                          View History
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  )) : (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center text-gray-400 py-12 text-sm bg-gray-50/50">No vendor data available yet.</TableCell>
+                    </TableRow>
+                  )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 
@@ -398,86 +400,88 @@ export default function Dashboard() {
           </div>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow className="border-gray-100">
-                <TableHead className="w-12 pl-4">
-                  <input type="checkbox" 
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-600 cursor-pointer w-4 h-4" 
-                    checked={paginatedInvoices.length > 0 && selectedInvoices.size === paginatedInvoices.length}
-                    onChange={toggleSelectAll}
-                  />
-                </TableHead>
-                <TableHead onClick={() => handleSort('invoiceNumber')} className="text-[10px] font-bold text-gray-500 uppercase tracking-wider cursor-pointer group hover:text-gray-900 transition-colors">
-                  Invoice # <SortIcon column="invoiceNumber" />
-                </TableHead>
-                <TableHead onClick={() => handleSort('vendorName')} className="text-[10px] font-bold text-gray-500 uppercase tracking-wider cursor-pointer group hover:text-gray-900 transition-colors">
-                  Vendor <SortIcon column="vendorName" />
-                </TableHead>
-                <TableHead onClick={() => handleSort('invoiceDate')} className="text-[10px] font-bold text-gray-500 uppercase tracking-wider cursor-pointer group hover:text-gray-900 transition-colors">
-                  Date <SortIcon column="invoiceDate" />
-                </TableHead>
-                <TableHead onClick={() => handleSort('status')} className="text-[10px] font-bold text-gray-500 uppercase tracking-wider cursor-pointer group hover:text-gray-900 transition-colors">
-                  Status <SortIcon column="status" />
-                </TableHead>
-                <TableHead onClick={() => handleSort('confidenceScores')} className="text-[10px] font-bold text-gray-500 uppercase tracking-wider cursor-pointer group hover:text-gray-900 transition-colors">
-                  Confidence <SortIcon column="confidenceScores" />
-                </TableHead>
-                <TableHead className="text-[10px] font-bold text-gray-500 uppercase tracking-wider text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredInvoices.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center text-gray-400 py-12">
-                     <div className="flex flex-col items-center justify-center">
-                        <SlidersHorizontal className="w-6 h-6 mb-2 opacity-20" />
-                        <span className="text-sm">No invoices match these filters.</span>
-                     </div>
-                  </TableCell>
-                </TableRow>
-              )}
-              {paginatedInvoices.map(inv => (
-                <TableRow key={inv.id} className={inv.status === 'Failed' ? 'bg-red-50 hover:bg-red-100' : 'border-gray-100 hover:bg-gray-50'}>
-                  <TableCell className="pl-4">
-                    <input type="checkbox"
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-600 cursor-pointer w-4 h-4"
-                      checked={selectedInvoices.has(inv.id)}
-                      onChange={(e) => toggleSelectInvoice(inv.id, e.target.checked)}
+          <div className="w-full overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="border-gray-100">
+                  <TableHead className="w-12 pl-4">
+                    <input type="checkbox" 
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-600 cursor-pointer w-4 h-4" 
+                      checked={paginatedInvoices.length > 0 && selectedInvoices.size === paginatedInvoices.length}
+                      onChange={toggleSelectAll}
                     />
-                  </TableCell>
-                  <TableCell className="font-semibold text-gray-900 text-sm whitespace-nowrap">{inv.invoiceNumber || <span className="opacity-50">-</span>}</TableCell>
-                  <TableCell className="font-medium text-gray-600 text-sm">{inv.vendorName || <span className="opacity-50">Unknown</span>}</TableCell>
-                  <TableCell className="text-gray-500 text-sm whitespace-nowrap">{inv.invoiceDate || <span className="opacity-50">-</span>}</TableCell>
-                  <TableCell>
-                    <Badge variant={inv.status === 'Approved' ? 'default' : inv.status === 'Failed' ? 'destructive' : 'secondary'} className="rounded font-semibold text-xs shadow-none">
-                      {inv.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {inv.confidenceScores ? (() => {
-                      const vals = Object.values(inv.confidenceScores as Record<string, number>);
-                      const avg = vals.length ? vals.reduce((a: number, b: number) => a + b, 0) / vals.length : 0;
-                      return (
-                        <span className={`text-sm font-semibold ${
-                          avg > 80 ? 'text-emerald-600' : avg > 50 ? 'text-amber-600' : 'text-red-600'
-                        }`}>
-                          {avg.toFixed(1)}%
-                        </span>
-                      );
-                    })() : (
-                      <span className="text-gray-300">-</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Link to={`/review/${inv.id}`} state={{ list: filteredInvoices.map(i => i.id) }} className="text-sm font-semibold text-blue-600 hover:text-blue-800">
-                      Review
-                    </Link>
-                  </TableCell>
+                  </TableHead>
+                  <TableHead onClick={() => handleSort('invoiceNumber')} className="text-[10px] font-bold text-gray-500 uppercase tracking-wider cursor-pointer group hover:text-gray-900 transition-colors">
+                    Invoice # <SortIcon column="invoiceNumber" />
+                  </TableHead>
+                  <TableHead onClick={() => handleSort('vendorName')} className="text-[10px] font-bold text-gray-500 uppercase tracking-wider cursor-pointer group hover:text-gray-900 transition-colors">
+                    Vendor <SortIcon column="vendorName" />
+                  </TableHead>
+                  <TableHead onClick={() => handleSort('invoiceDate')} className="text-[10px] font-bold text-gray-500 uppercase tracking-wider cursor-pointer group hover:text-gray-900 transition-colors">
+                    Date <SortIcon column="invoiceDate" />
+                  </TableHead>
+                  <TableHead onClick={() => handleSort('status')} className="text-[10px] font-bold text-gray-500 uppercase tracking-wider cursor-pointer group hover:text-gray-900 transition-colors">
+                    Status <SortIcon column="status" />
+                  </TableHead>
+                  <TableHead onClick={() => handleSort('confidenceScores')} className="text-[10px] font-bold text-gray-500 uppercase tracking-wider cursor-pointer group hover:text-gray-900 transition-colors">
+                    Confidence <SortIcon column="confidenceScores" />
+                  </TableHead>
+                  <TableHead className="text-[10px] font-bold text-gray-500 uppercase tracking-wider text-right">Actions</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {filteredInvoices.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center text-gray-400 py-12">
+                       <div className="flex flex-col items-center justify-center">
+                          <SlidersHorizontal className="w-6 h-6 mb-2 opacity-20" />
+                          <span className="text-sm">No invoices match these filters.</span>
+                       </div>
+                    </TableCell>
+                  </TableRow>
+                )}
+                {paginatedInvoices.map(inv => (
+                  <TableRow key={inv.id} className={inv.status === 'Failed' ? 'bg-red-50 hover:bg-red-100' : 'border-gray-100 hover:bg-gray-50'}>
+                    <TableCell className="pl-4">
+                      <input type="checkbox"
+                         className="rounded border-gray-300 text-blue-600 focus:ring-blue-600 cursor-pointer w-4 h-4"
+                         checked={selectedInvoices.has(inv.id)}
+                         onChange={(e) => toggleSelectInvoice(inv.id, e.target.checked)}
+                      />
+                    </TableCell>
+                    <TableCell className="font-semibold text-gray-900 text-sm whitespace-nowrap">{inv.invoiceNumber || <span className="opacity-50">-</span>}</TableCell>
+                    <TableCell className="font-medium text-gray-600 text-sm">{inv.vendorName || <span className="opacity-50">Unknown</span>}</TableCell>
+                    <TableCell className="text-gray-500 text-sm whitespace-nowrap">{inv.invoiceDate || <span className="opacity-50">-</span>}</TableCell>
+                    <TableCell>
+                      <Badge variant={inv.status === 'Approved' ? 'default' : inv.status === 'Failed' ? 'destructive' : 'secondary'} className="rounded font-semibold text-xs shadow-none">
+                        {inv.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {inv.confidenceScores ? (() => {
+                        const vals = Object.values(inv.confidenceScores as Record<string, number>);
+                        const avg = vals.length ? vals.reduce((a: number, b: number) => a + b, 0) / vals.length : 0;
+                        return (
+                          <span className={`text-sm font-semibold ${
+                            avg > 80 ? 'text-emerald-600' : avg > 50 ? 'text-amber-600' : 'text-red-600'
+                          }`}>
+                            {avg.toFixed(1)}%
+                          </span>
+                        );
+                      })() : (
+                        <span className="text-gray-300">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Link to={`/review/${inv.id}`} state={{ list: filteredInvoices.map(i => i.id) }} className="text-sm font-semibold text-blue-600 hover:text-blue-800">
+                        Review
+                      </Link>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
           
           <div className="flex items-center justify-between mt-4 text-xs font-medium text-gray-500 border-t border-gray-100 pt-4">
              <div>Showing {paginatedInvoices.length > 0 ? (currentPage - 1) * pageSize + 1 : 0} to {Math.min(currentPage * pageSize, filteredInvoices.length)} of {filteredInvoices.length} invoices</div>
