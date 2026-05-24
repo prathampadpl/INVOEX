@@ -184,7 +184,7 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="space-y-8 max-w-[1200px] mx-auto pb-12">
+    <div className="w-full max-w-[1200px] mx-auto space-y-8 pb-12">
       <div className="flex items-start justify-between">
         <div>
            <div className="text-blue-600 font-bold text-[10px] tracking-widest uppercase mb-1">Dashboard</div>

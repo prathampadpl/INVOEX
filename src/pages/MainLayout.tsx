@@ -29,8 +29,8 @@ export default function MainLayout() {
   const userInitials = user?.email ? user.email.substring(0, 2).toUpperCase() : 'U';
 
   return (
-    <div className="min-h-screen bg-[#FDFDFD] flex flex-col font-sans">
-       <header className="h-16 bg-white border-b border-gray-100 flex items-center justify-between px-6 md:px-12 sticky top-0 z-50">
+    <div className="min-h-screen w-full max-w-full bg-[#FDFDFD] flex flex-col font-sans overflow-x-hidden">
+       <header className="h-16 w-full bg-white border-b border-gray-100 flex items-center justify-between px-6 md:px-12 sticky top-0 z-50">
         <Link to="/dashboard" className="flex items-center gap-2">
           <div className="bg-blue-600 p-1.5 rounded-lg">
             <FileText className="w-5 h-5 text-white" />
@@ -87,7 +87,7 @@ export default function MainLayout() {
         </div>
       </header>
 
-      <main className="flex-1 overflow-auto p-6 md:p-12">
+      <main className="flex-1 w-full max-w-full overflow-x-hidden overflow-y-auto p-6 md:p-12">
         <Outlet />
       </main>
     </div>
