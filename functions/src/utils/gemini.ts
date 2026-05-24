@@ -114,17 +114,13 @@ function sanitizeExtractionResult(arr: any[]): any[] {
 async function getCorrectionsLogString(workspaceId: string): Promise<string> {
   try {
     const db = getFirestore();
-    const snap = await db.collection(`workspaces/${workspaceId}/corrections_log`).get();
+    const snap = await db.collection(`workspaces/${workspaceId}/corrections_log`)
+      .orderBy('occurrence_count', 'desc')
+      .limit(50)
+      .get();
     if (snap.empty) return '';
 
-    const sortedDocs = snap.docs.map(doc => doc.data()).sort((a, b) => {
-      const countA = a.occurrence_count || 1;
-      const countB = b.occurrence_count || 1;
-      if (countB !== countA) return countB - countA;
-      const timeA = a.updated_at || 0;
-      const timeB = b.updated_at || 0;
-      return timeB - timeA;
-    }).slice(0, 50);
+    const sortedDocs = snap.docs.map(doc => doc.data());
 
     const cleanCorrections: string[] = [];
     const FORBIDDEN_KEYWORDS = ["ignore", "instruction", "output", "system", "rule", "prompt", "previous", "instead", "reveal", "show all", "dump", "schema"];
@@ -156,14 +152,15 @@ async function getCorrectionsLogString(workspaceId: string): Promise<string> {
 async function getKnownVendorsString(workspaceId: string): Promise<string> {
   try {
     const db = getFirestore();
-    const snap = await db.collection(`workspaces/${workspaceId}/invoices`).get();
+    const snap = await db.collection(`workspaces/${workspaceId}/invoices`)
+      .orderBy('uploadedAt', 'desc')
+      .limit(200)
+      .get();
     if (snap.empty) return '';
 
     const approvedInvoices = snap.docs
       .map(doc => doc.data())
-      .filter(data => data.status === 'Approved')
-      .sort((a, b) => (b.uploadedAt || 0) - (a.uploadedAt || 0))
-      .slice(0, 200);
+      .filter(data => data.status === 'Approved');
 
     const vendorMap = new Map<string, string>();
     approvedInvoices.forEach(data => {
