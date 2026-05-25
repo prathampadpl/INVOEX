@@ -283,15 +283,24 @@ export default function UploadBatch() {
 
     } catch (err: any) {
       console.error(`[${file.name}] ERROR details:`, err);
+      let displayMessage = err.message || 'Pipeline failed during processing.';
+      
+      // Force override if we see the known error codes
+      if (err.code === 'NO_INVOICE_DATA_FOUND' || err.message === 'NO_INVOICE_DATA_FOUND') {
+        displayMessage = 'No invoice data found in this file.';
+      } else if (err.code === 'ALL_MODELS_EXHAUSTED' || err.message === 'ALL_MODELS_EXHAUSTED') {
+        displayMessage = 'All AI models failed to process the document.';
+      }
+
       try {
         const invoiceRef = doc(db, `workspaces/${workspaceId}/invoices/${uploadId}`);
         await updateDoc(invoiceRef, {
           status: 'Failed',
-          errorDetails: err.message || 'Pipeline failed during processing.',
+          errorDetails: displayMessage,
           updatedAt: Date.now()
         });
       } catch {}
-      throw new Error(err.message || 'Pipeline failed during processing.');
+      throw new Error(displayMessage);
     }
   };
 
@@ -350,7 +359,7 @@ export default function UploadBatch() {
               </svg>
             </div>
             <h3 className="text-lg font-semibold">Click to upload or drag and drop</h3>
-            <p className="text-sm text-neutral-500 mt-2">PDF, PNG, JPG, WEBP, HEIC, TXT, or DOCX · Up to 50MB for PDFs (chunked) · Up to 10 files</p>
+            <p className="text-sm text-neutral-500 mt-2">PDF, PNG, JPG, WEBP, HEIC, TXT, or DOCX · Up to 50MB for PDFs (chunked) · Up to 10 files (v2)</p>
           </div>
 
           {files.length > 0 && (
