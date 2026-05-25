@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
+import { Invoice, LineItem } from '../types/invoice';
 
 export default function Review() {
   const { id } = useParams();
@@ -27,8 +28,8 @@ export default function Review() {
     }
   }
 
-  const [invoice, setInvoice] = useState<any>(null);
-  const [editData, setEditData] = useState<any>({});
+  const [invoice, setInvoice] = useState<Invoice | null>(null);
+  const [editData, setEditData] = useState<Partial<Invoice>>({});
   const [loading, setLoading] = useState(true);
   const [historicalVendors, setHistoricalVendors] = useState<string[]>([]);
   const [historicalBuyers, setHistoricalBuyers] = useState<string[]>([]);
@@ -333,7 +334,7 @@ export default function Review() {
   }, [workspaceId, id]);
 
   const handleChange = (field: string, value: any) => {
-    setEditData((prev: any) => {
+    setEditData((prev) => {
       const next = { ...prev, [field]: value };
       
       const parse = (val: any) => {
@@ -405,11 +406,11 @@ export default function Review() {
     newItems[idx] = { ...newItems[idx], [field]: value };
 
     const item = newItems[idx];
-    const qty = parseFloat(item.quantity) || 0;
-    const rate = parseFloat(item.rate) || 0;
-    const disc = parseFloat(item.discount) || 0;
+    const qty = parseFloat(String(item.quantity || '')) || 0;
+    const rate = parseFloat(String(item.rate || '')) || 0;
+    const disc = parseFloat(String(item.discount || '')) || 0;
     const isPercent = item.discountType === 'percent';
-    const gst = parseFloat(item.gstRate) || 0;
+    const gst = parseFloat(String(item.gstRate || '')) || 0;
 
     if (field === 'quantity' || field === 'rate' || field === 'discount' || field === 'discountType' || field === 'gstRate') {
       const subtotal = qty * rate;
@@ -427,11 +428,11 @@ export default function Review() {
     const isInterstate = vendorState && buyerState && vendorState !== buyerState;
 
     newItems.forEach(it => {
-      const q = parseFloat(it.quantity) || 0;
-      const r = parseFloat(it.rate) || 0;
-      const d = parseFloat(it.discount) || 0;
+      const q = parseFloat(String(it.quantity || '')) || 0;
+      const r = parseFloat(String(it.rate || '')) || 0;
+      const d = parseFloat(String(it.discount || '')) || 0;
       const pct = it.discountType === 'percent';
-      const g = parseFloat(it.gstRate) || 0;
+      const g = parseFloat(String(it.gstRate || '')) || 0;
 
       const sub = q * r;
       const taxLine = pct ? sub * (1 - d / 100) : sub - d;
@@ -453,12 +454,12 @@ export default function Review() {
 
     const totalTax = totalCgst + totalSgst + totalIgst;
     const avgGstRate = totalTaxable > 0 ? Number(((totalTax / totalTaxable) * 100).toFixed(2)) : 0;
-    const roundOff = parseFloat(editData.roundOff) || 0;
+    const roundOff = parseFloat(String(editData.roundOff || '')) || 0;
     const grandTotal = Number((totalTaxable + totalTax + roundOff).toFixed(2));
-    const advance = parseFloat(editData.advancePaid) || 0;
+    const advance = parseFloat(String(editData.advancePaid || '')) || 0;
     const balanceDue = Number((grandTotal - advance).toFixed(2));
 
-    setEditData((prev: any) => ({
+    setEditData((prev) => ({
       ...prev,
       lineItems: newItems,
       taxableAmount: totalTaxable,
@@ -689,7 +690,7 @@ export default function Review() {
   // Revoke object URLs on unmount to prevent memory leaks
   useEffect(() => {
     return () => {
-      Object.values(objectUrls).forEach(url => {
+      Object.values(objectUrls).forEach((url: string) => {
         try { URL.revokeObjectURL(url); } catch {}
       });
     };
@@ -982,7 +983,7 @@ export default function Review() {
                 <Input type="number" className="font-bold bg-neutral-50" value={editData.grandTotal || ''} onChange={(e) => {
                   const val = parseFloat(e.target.value);
                   const cleanVal = isNaN(val) ? 0 : val;
-                  setEditData((prev: any) => ({ ...prev, grandTotal: cleanVal, balanceDue: cleanVal - (prev.advancePaid || 0) }));
+                  setEditData((prev) => ({ ...prev, grandTotal: cleanVal, balanceDue: cleanVal - Number(prev.advancePaid || 0) }));
                 }} />
               </div>
               <div className="space-y-1">
@@ -990,7 +991,7 @@ export default function Review() {
                 <Input type="number" className="bg-blue-50/30 font-medium" value={editData.advancePaid || ''} onChange={(e) => {
                   const val = parseFloat(e.target.value);
                   const cleanVal = isNaN(val) ? 0 : val;
-                  setEditData((prev: any) => ({ ...prev, advancePaid: cleanVal, balanceDue: (prev.grandTotal || 0) - cleanVal }));
+                  setEditData((prev) => ({ ...prev, advancePaid: cleanVal, balanceDue: Number(prev.grandTotal || 0) - cleanVal }));
                 }} />
               </div>
               <div className="space-y-1">
