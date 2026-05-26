@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/src/lib/store';
 import { db, handleFirestoreError, OperationType } from '@/src/lib/firebase';
 import { collection, query, onSnapshot, orderBy, limit, doc, setDoc } from 'firebase/firestore';
@@ -84,39 +84,51 @@ export default function Analytics() {
   // --- Computed Analytics ---
 
   // Field correction frequency
-  const fieldFrequency: Record<string, number> = {};
-  corrections.forEach(c => {
-    const f = c.field_name || 'unknown';
-    fieldFrequency[f] = (fieldFrequency[f] || 0) + (c.occurrence_count || 1);
-  });
-  const fieldChartData = Object.entries(fieldFrequency)
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 10)
-    .map(([field, count]) => ({ field, count }));
+  // ⚡ Bolt: Wrapped expensive array transformation in useMemo to prevent unnecessary re-renders.
+  // Impact: Prevents sorting/slicing/mapping up to 200 items on every render, caching until `corrections` update.
+  const fieldChartData = useMemo(() => {
+    const fieldFrequency: Record<string, number> = {};
+    corrections.forEach(c => {
+      const f = c.field_name || 'unknown';
+      fieldFrequency[f] = (fieldFrequency[f] || 0) + (c.occurrence_count || 1);
+    });
+    return Object.entries(fieldFrequency)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 10)
+      .map(([field, count]) => ({ field, count }));
+  }, [corrections]);
 
   // Layer distribution
-  const layerCounts: Record<string, number> = {};
-  invoices.forEach(inv => {
-    const layer = inv.extractionLayer || inv.modelVariant || 'unknown';
-    layerCounts[layer] = (layerCounts[layer] || 0) + 1;
-  });
-  const layerChartData = Object.entries(layerCounts).map(([layer, count]) => ({ layer, count }));
+  // ⚡ Bolt: Memoized the reduction of the invoices array into a layer counts map and chart data format.
+  // Impact: Caches the loop processing of up to 500 invoices so it only runs when `invoices` changes.
+  const layerChartData = useMemo(() => {
+    const layerCounts: Record<string, number> = {};
+    invoices.forEach(inv => {
+      const layer = inv.extractionLayer || inv.modelVariant || 'unknown';
+      layerCounts[layer] = (layerCounts[layer] || 0) + 1;
+    });
+    return Object.entries(layerCounts).map(([layer, count]) => ({ layer, count }));
+  }, [invoices]);
 
   // Average confidence per field (from confidenceScores map)
-  const fieldConfSum: Record<string, { sum: number; count: number }> = {};
-  invoices.forEach(inv => {
-    const cs = inv.confidenceScores;
-    if (!cs || typeof cs !== 'object') return;
-    Object.entries(cs as Record<string, number>).forEach(([field, score]) => {
-      if (!fieldConfSum[field]) fieldConfSum[field] = { sum: 0, count: 0 };
-      fieldConfSum[field].sum += score;
-      fieldConfSum[field].count++;
+  // ⚡ Bolt: Memoized nested loops that compute average confidence scores across invoices.
+  // Impact: Avoids looping over 500 invoices and their keys on every render cycle.
+  const fieldConfAvg = useMemo(() => {
+    const fieldConfSum: Record<string, { sum: number; count: number }> = {};
+    invoices.forEach(inv => {
+      const cs = inv.confidenceScores;
+      if (!cs || typeof cs !== 'object') return;
+      Object.entries(cs as Record<string, number>).forEach(([field, score]) => {
+        if (!fieldConfSum[field]) fieldConfSum[field] = { sum: 0, count: 0 };
+        fieldConfSum[field].sum += score;
+        fieldConfSum[field].count++;
+      });
     });
-  });
-  const fieldConfAvg = Object.entries(fieldConfSum)
-    .map(([field, { sum, count }]) => ({ field, avg: Math.round(sum / count) }))
-    .sort((a, b) => a.avg - b.avg)
-    .slice(0, 10);
+    return Object.entries(fieldConfSum)
+      .map(([field, { sum, count }]) => ({ field, avg: Math.round(sum / count) }))
+      .sort((a, b) => a.avg - b.avg)
+      .slice(0, 10);
+  }, [invoices]);
 
   const handleSaveThresholds = async () => {
     if (!workspaceId) return;
