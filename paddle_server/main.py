@@ -24,7 +24,7 @@ import logging
 import os
 import time
 import tempfile
-from typing import Any
+from typing import Any, List
 
 import numpy as np
 import uvicorn
@@ -33,6 +33,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from PIL import Image
 from pydantic import BaseModel
+
+from sap_models import BatchInvoiceRequest, InvoiceStatusResponse
+import sap_client
 
 # ── PaddleOCR v5 ─────────────────────────────────────────────────────────────
 from paddleocr import PaddleOCR
@@ -229,6 +232,28 @@ async def ocr_endpoint(body: OcrRequest):
         overall_confidence=round(overall_conf, 2),
         processing_ms=ms,
     )
+
+@app.post("/api/sap/push", response_model=List[InvoiceStatusResponse])
+async def push_invoices_to_sap(request: BatchInvoiceRequest):
+    """
+    Push a batch of invoices to SAP via OData.
+    """
+    responses = []
+    for invoice in request.invoices:
+        try:
+            status = sap_client.push_invoice_to_sap(invoice)
+            responses.append(status)
+        except Exception as e:
+            log.error(f"Error pushing to SAP: {e}", exc_info=True)
+            responses.append(InvoiceStatusResponse(
+                invoex_id=invoice.invoex_id,
+                invoice_number=invoice.invoice_number,
+                vendor_name=invoice.vendor_name,
+                total_amount=invoice.total_amount,
+                status="FAILED",
+                error_message=f"Internal Error: {str(e)}"
+            ))
+    return responses
 
 @app.exception_handler(Exception)
 async def global_handler(_: Request, exc: Exception):

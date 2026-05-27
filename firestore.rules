@@ -31,6 +31,22 @@ service cloud.firestore {
       match /corrections_log/{logId} {
         allow read, write: if request.auth != null && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid));
       }
+
+      match /rules/{ruleId} {
+        allow read, write: if request.auth != null && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid));
+      }
+      
+      match /settings/{settingId} {
+        allow read, write: if request.auth != null && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid));
+      }
+
+      match /export_history/{historyId} {
+        allow read, write: if request.auth != null && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid));
+      }
+    }
+
+    match /invites/{inviteId} {
+      allow read, write: if request.auth != null;
     }
   }
 }

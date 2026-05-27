@@ -7,6 +7,15 @@ Your task is to analyze the provided image/PDF and extract all relevant billing 
 If the document contains multiple distinct invoices (e.g., a 10-page PDF with 5 different invoices, OR a single image/page containing multiple small receipts/invoices stitched together), return an array of objects, one for EACH distinct invoice.
 If it is a single invoice, return an array with one object.
 
+IMPORTANT - HANDWRITTEN TRANSPORT LEDGERS (BILTY):
+If the image appears to be a handwritten transport register or ledger (e.g., sideways pages containing columns like S.No, Date, LR No, Vehicle, Consignor, Consignee, Amount, Freight, etc., often written in Hindi or mixed English/Hindi):
+- Treat EACH ROW of the ledger as a separate invoice object in the JSON array.
+- Map the transport company name at the top (e.g., "POOJA ROAD CARRIERS") to \`vendorName\`.
+- Map the LR/Bilty No or S.No to \`invoiceNumber\`.
+- Map the Freight/Amount for that row to \`grandTotal\` and \`taxableAmount\`.
+- Do your absolute best to visually read the handwritten Hindi/English text. Do NOT give up or return empty data just because it is handwritten or sideways.
+- NEVER return conversational text. ALWAYS return the JSON array.
+
 Output strictly valid JSON array of objects with these keys:
 - vendorName (string)
 - vendorAddress (string)

@@ -18,6 +18,7 @@ import Review from './pages/Review';
 import Settings from './pages/Settings';
 import Export from './pages/Export';
 import Analytics from './pages/Analytics';
+import SAPIntegration from './pages/SAPIntegration';
 
 export default function App() {
   const { setUser, setWorkspaceInfo, setLoaded, isLoaded, user } = useAuth();
@@ -131,6 +132,7 @@ export default function App() {
             <Route path="/review/:id" element={<Review />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/analytics" element={<Analytics />} />
+            <Route path="/sap-integration" element={<SAPIntegration />} />
           </Route>
           
           <Route path="*" element={<Navigate to="/" />} />
