@@ -4,6 +4,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 
 const db = getFirestore();
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 
 export const dailyCleanup = onSchedule(
   {
@@ -14,8 +15,7 @@ export const dailyCleanup = onSchedule(
     memory: '512MiB',
   },
   async () => {
-    const cutoff = Date.now() - THIRTY_DAYS_MS;
-    console.log(`[Cleanup] Starting 30-day file purge. Cutoff: ${new Date(cutoff).toISOString()}`);
+    console.log(`[Cleanup] Starting plan-aware file purge.`);
 
     const workspacesSnap = await db.collection('workspaces').get();
     
@@ -24,6 +24,23 @@ export const dailyCleanup = onSchedule(
 
     for (const wsDoc of workspacesSnap.docs) {
       const workspaceId = wsDoc.id;
+      const workspaceData = wsDoc.data();
+      let retentionMs = THIRTY_DAYS_MS; // default to 30 days
+
+      if (workspaceData.ownerId) {
+        const ownerSnap = await db.collection('users').doc(workspaceData.ownerId).get();
+        if (ownerSnap.exists) {
+          const plan = ownerSnap.data()?.plan || 'free';
+          if (plan === 'pro') {
+            retentionMs = ONE_YEAR_MS;
+          } else if (plan === 'enterprise') {
+            continue; // Infinite retention
+          }
+        }
+      }
+
+      const cutoff = Date.now() - retentionMs;
+      
       const invoicesSnap = await db.collection(`workspaces/${workspaceId}/invoices`)
         .where('createdAt', '<', cutoff)
         .get();

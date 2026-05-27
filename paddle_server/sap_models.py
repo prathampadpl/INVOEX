@@ -11,6 +11,7 @@ class InvoiceLineItem(BaseModel):
 class Invoice(BaseModel):
     invoex_id: str
     vendor_name: str
+    vendor_account_number: Optional[str] = None
     gstin: str
     invoice_number: str
     invoice_date: date

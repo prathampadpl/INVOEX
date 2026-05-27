@@ -659,18 +659,22 @@ export default function Review() {
        }
        
        if (fetchUrl && !urls[inv.fileUrl]) {
-           try {
-               const res = await fetch(fetchUrl, {
-                   headers: { 'Authorization': `Bearer ${authToken}` }
-               });
-               if (res.ok) {
-                   const blob = await res.blob();
-                   const objectUrl = URL.createObjectURL(blob);
-                   urls[inv.fileUrl] = objectUrl;
-                   changed = true;
+           if (fetchUrl.includes('firebasestorage.googleapis.com')) {
+               // Firebase storage URLs work directly, don't fetch as blob to avoid CORS issues
+           } else {
+               try {
+                   const res = await fetch(fetchUrl, {
+                       headers: { 'Authorization': `Bearer ${authToken}` }
+                   });
+                   if (res.ok) {
+                       const blob = await res.blob();
+                       const objectUrl = URL.createObjectURL(blob);
+                       urls[inv.fileUrl] = objectUrl;
+                       changed = true;
+                   }
+               } catch (err) {
+                   console.error("Failed to load secure URL", err);
                }
-           } catch (err) {
-               console.error("Failed to load secure url for", fetchUrl, err);
            }
        }
        
@@ -683,6 +687,7 @@ export default function Review() {
 
   const getSecureUrl = (url: string | null | undefined) => {
     if (!url) return null;
+    if (url.includes('firebasestorage.googleapis.com')) return url;
     return objectUrls[url] || null;
   };
 
@@ -901,6 +906,9 @@ export default function Review() {
               </div>
               <div>
                 {renderFlaggedInput('vendorGSTIN', 'Vendor GSTIN')}
+              </div>
+              <div className="col-span-2 sm:col-span-1">
+                {renderFlaggedInput('vendorAccountNumber', 'Vendor Account No')}
               </div>
               <div className="col-span-2 space-y-1">
                 <Label className="flex items-center">Vendor Address <ConfidenceBadge field="vendorAddress" /></Label>

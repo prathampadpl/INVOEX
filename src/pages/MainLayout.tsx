@@ -20,6 +20,7 @@ export default function MainLayout() {
   const nav = [
     { name: 'Dashboard', path: '/dashboard' },
     { name: 'Export', path: '/export' },
+    { name: 'SAP Sync', path: '/sap-integration' },
   ];
 
   const adminNav = [

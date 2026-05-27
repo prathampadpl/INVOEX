@@ -1,13 +1,11 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/src/lib/store';
-import { auth, db, storage, functions } from '@/src/lib/firebase';
-import { collection, doc, getDocs, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
+import { auth, db, storage } from '@/src/lib/firebase';
+import { doc, setDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
-import { processWithAI } from '@/src/lib/gemini';
-import { PDFDocument } from 'pdf-lib';
 
 const compressImage = (file: File, maxW = 2000, maxH = 2000, quality = 0.85): Promise<Blob> => {
   return new Promise((resolve) => {
@@ -144,162 +142,24 @@ export default function UploadBatch() {
         uploadedAt: Date.now(),
       });
 
-      let extractedDataList: any[] = [];
-      let finalExtractedBy = '';
-
-      const fileToBase64 = (f: Blob | File): Promise<string> => new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(f);
-        reader.onload = () => resolve((reader.result as string).split(',')[1]);
-        reader.onerror = error => reject(error);
-      });
-
-      const isPDF = payloadType.toLowerCase().includes('pdf') || file.name.toLowerCase().endsWith('.pdf');
-
-      if (isPDF) {
-        try {
-          const fileBuffer = await uploadPayload.arrayBuffer();
-          const pdfDoc = await PDFDocument.load(fileBuffer, { ignoreEncryption: true });
-          const totalPages = pdfDoc.getPageCount();
-          
-          if (totalPages > 5) {
-            updateStatus(file.name, `🤖 AI extraction in progress (${totalPages} pages)...`);
-            const chunkSize = 3; // Keep chunks small for browser memory safety and payload limits
-            
-            for (let start = 0; start < totalPages; start += chunkSize) {
-              const end = Math.min(start + chunkSize, totalPages);
-              updateStatus(file.name, `🤖 Extracting pages ${start + 1} to ${end}...`);
-              
-              const chunkPdf = await PDFDocument.create();
-              const indices = Array.from({ length: end - start }, (_, i) => start + i);
-              const copiedPages = await chunkPdf.copyPages(pdfDoc, indices);
-              copiedPages.forEach(p => chunkPdf.addPage(p));
-              const chunkBytes = await chunkPdf.save({ useObjectStreams: false });
-              const chunkBlob = new Blob([chunkBytes], { type: 'application/pdf' });
-              
-              const chunkBase64 = await fileToBase64(chunkBlob);
-              const chunkResult = await processWithAI(chunkBase64, 'application/pdf', workspaceId);
-              
-              if (chunkResult && chunkResult.data) {
-                extractedDataList.push(...chunkResult.data);
-                finalExtractedBy = chunkResult.extractedBy;
-              }
-            }
-          }
-        } catch (pdfErr) {
-          console.warn('Failed to parse/chunk PDF on client, falling back to full file processing:', pdfErr);
-        }
-      }
-
-      // If not chunked (or chunking failed/skipped)
-      if (extractedDataList.length === 0) {
-        updateStatus(file.name, '🤖 AI extraction in progress...');
-        const base64Data = await fileToBase64(uploadPayload);
-        const result = await processWithAI(base64Data, payloadType, workspaceId);
-        extractedDataList = result.data;
-        finalExtractedBy = result.extractedBy;
-      }
-
-      const primaryInvoice = extractedDataList[0] || {};
-      
-      const updatePayload = {
-        status: 'Ready for Review',
-        extractedBy: finalExtractedBy || 'client-side',
-        vendorName: primaryInvoice.vendorName || '',
-        vendorAddress: primaryInvoice.vendorAddress || '',
-        vendorGSTIN: primaryInvoice.vendorGSTIN || '',
-        buyerName: primaryInvoice.buyerName || '',
-        buyerAddress: primaryInvoice.buyerAddress || '',
-        buyerGSTIN: primaryInvoice.buyerGSTIN || '',
-        invoiceNumber: primaryInvoice.invoiceNumber || '',
-        invoiceDate: primaryInvoice.invoiceDate || '',
-        dueDate: primaryInvoice.dueDate || '',
-        paymentTerms: primaryInvoice.paymentTerms || '',
-        taxableAmount: primaryInvoice.taxableAmount || 0,
-        cgst: primaryInvoice.cgst || 0,
-        sgst: primaryInvoice.sgst || 0,
-        igst: primaryInvoice.igst || 0,
-        gstRate: primaryInvoice.gstRate || 0,
-        roundOff: primaryInvoice.roundOff || 0,
-        grandTotal: primaryInvoice.grandTotal || 0,
-        advancePaid: primaryInvoice.advancePaid || 0,
-        balanceDue: primaryInvoice.balanceDue || 0,
-        paymentMode: primaryInvoice.paymentMode || '',
-        lineItems: primaryInvoice.lineItems || [],
-        confidenceScores: primaryInvoice.confidenceScores || {},
-        overallConfidence: primaryInvoice.overallConfidence || 0,
-        doubtfulFields: primaryInvoice.doubtfulFields || [],
-        validationErrors: primaryInvoice.validationErrors || [],
-        updatedAt: Date.now()
-      };
-
-      await updateDoc(invoiceRef, updatePayload);
-      
-      if (extractedDataList.length > 1) {
-        const { writeBatch } = await import('firebase/firestore');
-        const batch = writeBatch(db);
-        
-        for (let i = 1; i < extractedDataList.length; i++) {
-          const siblingRef = doc(collection(db, `workspaces/${workspaceId}/invoices`));
-          const sibling = extractedDataList[i];
-          batch.set(siblingRef, {
-            storagePath: storagePath,
-            fileUrl: fileUrl,
-            batchParent: uploadId,
-            status: 'Ready for Review',
-            createdAt: Date.now(),
-            vendorName: sibling.vendorName || '',
-            vendorAddress: sibling.vendorAddress || '',
-            vendorGSTIN: sibling.vendorGSTIN || '',
-            buyerName: sibling.buyerName || '',
-            buyerAddress: sibling.buyerAddress || '',
-            buyerGSTIN: sibling.buyerGSTIN || '',
-            invoiceNumber: sibling.invoiceNumber || '',
-            invoiceDate: sibling.invoiceDate || '',
-            dueDate: sibling.dueDate || '',
-            paymentTerms: sibling.paymentTerms || '',
-            taxableAmount: sibling.taxableAmount || 0,
-            cgst: sibling.cgst || 0,
-            sgst: sibling.sgst || 0,
-            igst: sibling.igst || 0,
-            gstRate: sibling.gstRate || 0,
-            roundOff: sibling.roundOff || 0,
-            grandTotal: sibling.grandTotal || 0,
-            advancePaid: sibling.advancePaid || 0,
-            balanceDue: sibling.balanceDue || 0,
-            paymentMode: sibling.paymentMode || '',
-            lineItems: sibling.lineItems || [],
-            confidenceScores: sibling.confidenceScores || {},
-            overallConfidence: sibling.overallConfidence || 0,
-            doubtfulFields: sibling.doubtfulFields || [],
-            validationErrors: sibling.validationErrors || [],
-            updatedAt: Date.now()
-          });
-        }
-        await batch.commit();
-      }
-
-      updateStatus(file.name, `✅ Done (${finalExtractedBy || 'client-side'})`);
+      updateStatus(file.name, `✅ Uploaded (Backend Processing)`);
 
     } catch (err: any) {
       console.error(`[${file.name}] ERROR details:`, err);
       let displayMessage = err.message || 'Pipeline failed during processing.';
-      
-      // Force override if we see the known error codes
-      if (err.code === 'NO_INVOICE_DATA_FOUND' || err.message === 'NO_INVOICE_DATA_FOUND') {
-        displayMessage = 'No invoice data found in this file.';
-      } else if (err.code === 'ALL_MODELS_EXHAUSTED' || err.message === 'ALL_MODELS_EXHAUSTED') {
-        displayMessage = 'All AI models failed to process the document.';
-      }
 
       try {
         const invoiceRef = doc(db, `workspaces/${workspaceId}/invoices/${uploadId}`);
-        await updateDoc(invoiceRef, {
+        await setDoc(invoiceRef, {
           status: 'Failed',
           errorDetails: displayMessage,
           updatedAt: Date.now()
-        });
-      } catch {}
+        }, { merge: true });
+      } catch (dbErr) {
+        console.error('Failed to update invoice status:', dbErr);
+      }
+      
+      updateStatus(file.name, `❌ Failed: ${displayMessage}`);
       throw new Error(displayMessage);
     }
   };

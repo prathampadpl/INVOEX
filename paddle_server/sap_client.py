@@ -36,7 +36,7 @@ def push_invoice_to_sap(invoice: Invoice) -> InvoiceStatusResponse:
     # 2. Map payload to SAP OData format
     # This structure depends on your actual SAP Gateway OData Service definition
     sap_payload = {
-        "Vendor": invoice.gstin, # Or a mapped SAP Vendor Code
+        "Vendor": invoice.vendor_account_number or invoice.gstin, # Or a mapped SAP Vendor Code
         "InvoiceDate": invoice.invoice_date.isoformat() + "T00:00:00",
         "ReferenceDocument": invoice.invoice_number,
         "GrossAmount": str(invoice.total_amount),

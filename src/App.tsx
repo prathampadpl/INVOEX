@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from '@/components/ui/sonner';
 import { auth, db, initError } from '@/src/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, writeBatch, collection, query, where, getDocs } from 'firebase/firestore';
 import { useAuth } from '@/src/lib/store';
 import ErrorBoundary from '@/src/components/ErrorBoundary';
 
@@ -39,31 +39,62 @@ export default function App() {
           }
 
           if (!activeWorkspaceId) {
-            console.log('[App] No user doc or activeWorkspaceId found, creating default workspace...');
-            const newWorkspaceId = crypto.randomUUID();
+            // Check for pending invites first
+            const invitesRef = collection(db, 'invites');
+            const q = query(invitesRef, where('email', '==', u.email?.toLowerCase().trim()));
+            const inviteSnap = await getDocs(q);
+
             const batch = writeBatch(db);
-            
-            batch.set(doc(db, 'workspaces', newWorkspaceId), {
-              name: 'My Workspace',
-              ownerId: u.uid,
-              createdAt: Date.now()
-            });
 
-            batch.set(doc(db, `workspaces/${newWorkspaceId}/members`, u.uid), {
-              role: 'owner',
-              joinedAt: Date.now()
-            });
+            if (!inviteSnap.empty) {
+              const inviteDoc = inviteSnap.docs[0];
+              const inviteData = inviteDoc.data();
+              const joinedWorkspaceId = inviteData.workspaceId;
+              
+              console.log('[App] Found pending invite, joining workspace:', joinedWorkspaceId);
+              
+              batch.set(doc(db, `workspaces/${joinedWorkspaceId}/members`, u.uid), {
+                role: inviteData.role || 'member',
+                joinedAt: Date.now()
+              });
 
-            batch.set(doc(db, 'users', u.uid), {
-              email: u.email,
-              displayName: u.displayName || '',
-              activeWorkspaceId: newWorkspaceId,
-              plan: 'free',
-              createdAt: Date.now()
-            }, { merge: true });
+              batch.set(doc(db, 'users', u.uid), {
+                email: u.email,
+                displayName: u.displayName || '',
+                activeWorkspaceId: joinedWorkspaceId,
+                plan: 'free',
+                createdAt: Date.now()
+              }, { merge: true });
 
-            await batch.commit();
-            activeWorkspaceId = newWorkspaceId;
+              batch.delete(inviteDoc.ref);
+              await batch.commit();
+              activeWorkspaceId = joinedWorkspaceId;
+            } else {
+              console.log('[App] No user doc or activeWorkspaceId found, creating default workspace...');
+              const newWorkspaceId = crypto.randomUUID();
+              
+              batch.set(doc(db, 'workspaces', newWorkspaceId), {
+                name: 'My Workspace',
+                ownerId: u.uid,
+                createdAt: Date.now()
+              });
+
+              batch.set(doc(db, `workspaces/${newWorkspaceId}/members`, u.uid), {
+                role: 'owner',
+                joinedAt: Date.now()
+              });
+
+              batch.set(doc(db, 'users', u.uid), {
+                email: u.email,
+                displayName: u.displayName || '',
+                activeWorkspaceId: newWorkspaceId,
+                plan: 'free',
+                createdAt: Date.now()
+              }, { merge: true });
+
+              await batch.commit();
+              activeWorkspaceId = newWorkspaceId;
+            }
           }
 
           if (activeWorkspaceId) {

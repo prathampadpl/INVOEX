@@ -2,6 +2,7 @@ import { onObjectFinalized } from 'firebase-functions/v2/storage';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import { processWithAI } from '../utils/gemini';
+import { applyRules } from '../utils/applyRules';
 
 const db = getFirestore();
 
@@ -40,6 +41,7 @@ export const onInvoiceUpload = onObjectFinalized(
         fileUrl: `https://firebasestorage.googleapis.com/v0/b/${fileBucket}/o/${encodeURIComponent(filePath)}?alt=media`,
         updatedAt: Date.now(),
         createdAt: Date.now(),
+        uploadedAt: Date.now(),
       }, { merge: true });
 
       const bucket = getStorage().bucket(fileBucket);
@@ -48,8 +50,13 @@ export const onInvoiceUpload = onObjectFinalized(
       // Step 2: Send to AI Pipeline
       const { data: extractedDataList, extractedBy } = await processWithAI(buffer, contentType || 'application/pdf', workspaceId);
 
+      // Fetch custom rules for workspace
+      const rulesSnap = await db.collection(`workspaces/${workspaceId}/rules`).get();
+      const rules = rulesSnap.docs.map(doc => doc.data());
+
       // Bug 1 Fix: Explicitly map the output to avoid data loss on split invoices
-      const primaryInvoice = extractedDataList[0] || {};
+      let primaryInvoice = extractedDataList[0] || {};
+      primaryInvoice = applyRules(primaryInvoice, rules);
       
       const updatePayload = {
         status: 'Ready for Review',
@@ -79,7 +86,8 @@ export const onInvoiceUpload = onObjectFinalized(
         overallConfidence: primaryInvoice.overallConfidence || 0,
         doubtfulFields: primaryInvoice.doubtfulFields || [],
         validationErrors: primaryInvoice.validationErrors || [],
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
+        uploadedAt: Date.now()
       };
 
       // Step 3: Save Primary Invoice
@@ -91,7 +99,8 @@ export const onInvoiceUpload = onObjectFinalized(
         const batch = db.batch();
         for (let i = 1; i < extractedDataList.length; i++) {
           const siblingRef = db.collection(`workspaces/${workspaceId}/invoices`).doc();
-          const sibling = extractedDataList[i];
+          let sibling = extractedDataList[i];
+          sibling = applyRules(sibling, rules);
           batch.set(siblingRef, {
             // Bug 1 & 2 Fix: Explicitly copy storagePath and fileUrl for split invoices!
             storagePath: filePath,
@@ -124,7 +133,8 @@ export const onInvoiceUpload = onObjectFinalized(
             overallConfidence: sibling.overallConfidence || 0,
             doubtfulFields: sibling.doubtfulFields || [],
             validationErrors: sibling.validationErrors || [],
-            updatedAt: Date.now()
+            updatedAt: Date.now(),
+            uploadedAt: Date.now()
           });
         }
         await batch.commit();

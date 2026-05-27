@@ -10,67 +10,76 @@ import {
   Loader2
 } from 'lucide-react';
 
-// Mock data generator for INVOEX extracted data ready to be pushed to SAP
-const generateMockInvoices = () => {
-  return [
-    {
-      invoex_id: "INVX-001",
-      vendor_name: "TechCorp India Pvt Ltd",
-      gstin: "27AADCB2230M1Z2",
-      invoice_number: "TC-2023-089",
-      invoice_date: "2023-10-15",
-      due_date: "2023-11-15",
-      line_items: [
-        { material_description: "Cloud Hosting Services", quantity: 1, unit_price: 50000.0, hsn_sac_code: "998314" }
-      ],
-      cgst_amount: 4500.0,
-      sgst_amount: 4500.0,
-      igst_amount: 0.0,
-      total_amount: 59000.0,
-      currency: "INR",
-      cost_center: "CC-IT-01"
-    },
-    {
-      invoex_id: "INVX-002",
-      vendor_name: "Office Supplies Co",
-      gstin: "", // Intentionally missing to trigger SAP Validation Error
-      invoice_number: "OS-5541",
-      invoice_date: "2023-10-18",
-      line_items: [
-        { material_description: "Stationery", quantity: 50, unit_price: 100.0, hsn_sac_code: "48201090" }
-      ],
-      total_amount: 5000.0,
-      currency: "INR",
-      gl_account: "GL-4001"
-    }
-  ];
-};
+import { useAuth } from '@/src/lib/store';
+import { db } from '@/src/lib/firebase';
+import { collection, query, orderBy, onSnapshot, doc, writeBatch } from 'firebase/firestore';
 
 export default function SAPIntegration() {
+  const { workspaceId } = useAuth();
   const [invoices, setInvoices] = useState<any[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   
   useEffect(() => {
-    const initialData = generateMockInvoices().map(inv => ({
-      ...inv,
-      status: 'READY',
-      sap_document_number: null,
-      error_message: null
-    }));
-    setInvoices(initialData);
-  }, []);
+    if (!workspaceId) return;
+    const path = `workspaces/${workspaceId}/invoices`;
+    const q = query(collection(db, path), orderBy('uploadedAt', 'desc'));
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      // Map Firebase invoices to SAP format
+      const data = snapshot.docs.map(doc => {
+        const inv = doc.data();
+        return {
+          id: doc.id,
+          invoex_id: inv.invoiceNumber || doc.id,
+          vendor_name: inv.vendorName || '',
+          vendor_account_number: inv.vendorAccountNumber || '',
+          gstin: inv.vendorGSTIN || '',
+          invoice_number: inv.invoiceNumber || '',
+          invoice_date: inv.invoiceDate || '',
+          due_date: inv.dueDate || '',
+          line_items: (inv.lineItems || []).map((item: any) => ({
+            material_description: item.description || '',
+            quantity: item.quantity || 0,
+            unit_price: item.rate || 0,
+            hsn_sac_code: item.hsnCode || ''
+          })),
+          cgst_amount: inv.cgst || 0,
+          sgst_amount: inv.sgst || 0,
+          igst_amount: inv.igst || 0,
+          total_amount: inv.grandTotal || 0,
+          currency: "INR",
+          status: inv.sap_status || (inv.status === 'Approved' ? 'READY' : 'PENDING'),
+          sap_document_number: inv.sap_document_number || null,
+          error_message: inv.sap_error_message || null,
+          firebase_status: inv.status
+        };
+      });
+      // Only show invoices that are approved in INVOEX or already interacted with SAP
+      const approvedOrSap = data.filter(i => i.firebase_status === 'Approved' || i.status !== 'PENDING');
+      setInvoices(approvedOrSap);
+    }, (error) => {
+      console.error("Failed to fetch invoices for SAP", error);
+    });
+
+    return unsubscribe;
+  }, [workspaceId]);
 
   const handlePushToSAP = async () => {
+    if (!workspaceId) return;
     setIsUploading(true);
+    
+    // Optimistic UI update
     setInvoices(prev => prev.map(inv => ({ ...inv, status: 'PROCESSING' })));
     
     try {
+      // Filter out invoices that are already APPROVED in SAP
+      const pendingInvoices = invoices.filter(i => i.status !== 'APPROVED');
       const payload = {
-        invoices: invoices.map(({ status, sap_document_number, error_message, ...rest }) => rest)
+        invoices: pendingInvoices.map(({ status, sap_document_number, error_message, firebase_status, id, ...rest }) => rest)
       };
       
-      // Adjust URL if paddle_server is hosted elsewhere in prod
-      const response = await fetch('http://localhost:8080/api/sap/push', {
+      const API_BASE = import.meta.env.VITE_PADDLE_URL || 'http://localhost:8080';
+      const response = await fetch(`${API_BASE}/api/sap/push`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -82,6 +91,25 @@ export default function SAPIntegration() {
 
       const updatedStatuses = await response.json();
       
+      // Update Firebase with the new SAP statuses
+      const batch = writeBatch(db);
+      updatedStatuses.forEach((update: any) => {
+        // We included the firebase doc 'id' in the payload or we can find it
+        // Wait, I stripped 'id' in the payload. Let's find the original invoice by invoex_id.
+        const originalInvoice = pendingInvoices.find(i => i.invoex_id === update.invoex_id);
+        if (originalInvoice && originalInvoice.id) {
+          const docRef = doc(db, `workspaces/${workspaceId}/invoices`, originalInvoice.id);
+          batch.update(docRef, {
+            sap_status: update.status,
+            sap_document_number: update.sap_document_number || null,
+            sap_error_message: update.error_message || null
+          });
+        }
+      });
+      await batch.commit();
+      
+      // The onSnapshot listener will automatically update the UI state, 
+      // but we can also handle local fallback just in case:
       setInvoices(prev => prev.map(inv => {
         const update = updatedStatuses.find((u: any) => u.invoex_id === inv.invoex_id);
         if (update) {

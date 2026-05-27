@@ -12,17 +12,20 @@ Your task is to analyze the provided image/PDF and extract all relevant billing 
 If the document contains multiple distinct invoices (e.g., a 10-page PDF with 5 different invoices, OR a single image/page containing multiple small receipts/invoices stitched together), return an array of objects, one for EACH distinct invoice.
 If it is a single invoice, return an array with one object.
 
-IMPORTANT - HANDWRITTEN TRANSPORT LEDGERS (BILTY):
-If the image appears to be a handwritten transport register or ledger (e.g., sideways pages containing columns like S.No, Date, LR No, Vehicle, Consignor, Consignee, Amount, Freight, etc., often written in Hindi or mixed English/Hindi):
-- Treat EACH ROW of the ledger as a separate invoice object in the JSON array.
-- Map the transport company name at the top (e.g., "POOJA ROAD CARRIERS") to \`vendorName\`.
-- Map the LR/Bilty No or S.No to \`invoiceNumber\`.
-- Map the Freight/Amount for that row to \`grandTotal\` and \`taxableAmount\`.
-- Do your absolute best to visually read the handwritten Hindi/English text. Do NOT give up or return empty data just because it is handwritten or sideways.
+IMPORTANT - TABULAR LEDGERS AND AGING REPORTS (Digital or Handwritten):
+If the image appears to be a tabular ledger, log, register, or aging summary report containing multiple rows of transactions/balances (e.g., a "Payable Ledger", "Accounts Payable Aging Summary Report", a spreadsheet screenshot, or a handwritten transport register):
+- Treat EACH ROW of the ledger or report as a separate invoice object in the JSON array.
+- Map the overall entity name at the top (e.g., "Business Name" or the transport company name) to \`vendorName\`. However, if a row explicitly lists a "Supplier Name", "Vendor", or similar in its columns, use that specific supplier/vendor as the \`vendorName\` for that row.
+- Map the Invoice Number, LR/Bilty No, or S.No to \`invoiceNumber\`. If none exists (like in an aging report), omit it or use a generic identifier.
+- Map the Total Amount, Freight, Balance, or 'Total' for that row to \`grandTotal\` and \`balanceDue\`.
+- Extract dates (Date, Due Date, Payment Date, 'As of' date) appropriately. For aging reports without invoice dates, use the "As of" date as the invoiceDate.
+- The image may sometimes be rotated 90 degrees. If so, please visually rotate it to read the columns correctly.
+- Do your absolute best to visually read the data, even if handwritten, messy, or in a spreadsheet format.
 - NEVER return conversational text. ALWAYS return the JSON array.
 
 Output strictly valid JSON array of objects with these keys:
 - vendorName (string)
+- vendorAccountNumber (string, extracting any Account Number, Vendor ID, or Vendor Account mentioned on the invoice)
 - vendorAddress (string)
 - vendorGSTIN (string)
 - buyerName (string)
@@ -78,7 +81,7 @@ function isExtractionUsable(data: any): boolean {
 // Sanitize and populate confidence scores + doubtfulFields
 function sanitizeExtractionResult(arr: any[]): any[] {
   const fields = [
-    'vendorName', 'vendorAddress', 'vendorGSTIN', 'buyerName', 'buyerAddress', 'buyerGSTIN',
+    'vendorName', 'vendorAccountNumber', 'vendorAddress', 'vendorGSTIN', 'buyerName', 'buyerAddress', 'buyerGSTIN',
     'invoiceNumber', 'invoiceDate', 'dueDate', 'paymentTerms', 'taxableAmount', 'cgst',
     'sgst', 'igst', 'gstRate', 'roundOff', 'grandTotal', 'advancePaid', 'balanceDue', 'paymentMode'
   ];
@@ -231,6 +234,20 @@ async function tryGeminiModel(
         displayName: "Upload Document",
       });
       fileUploadName = uploadResult.file.name;
+
+      // Poll until the file is active
+      let fileState = await fileManager.getFile(fileUploadName);
+      let attempts = 0;
+      while (fileState.state === "PROCESSING" && attempts < 30) {
+        console.log(`[Pipeline] File ${fileUploadName} is processing, waiting...`);
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        fileState = await fileManager.getFile(fileUploadName);
+        attempts++;
+      }
+
+      if (fileState.state !== "ACTIVE") {
+        throw new Error(`File processing failed or timed out. State: ${fileState.state}`);
+      }
       
       part = {
         fileData: {
@@ -429,7 +446,7 @@ async function applyHistoricalCorrections(invoice: any, workspaceId: string): Pr
       }
     });
 
-    const staticFields = ['vendorName', 'vendorGSTIN', 'vendorAddress', 'buyerName', 'buyerGSTIN', 'buyerAddress'];
+    const staticFields = ['vendorName', 'vendorAccountNumber', 'vendorGSTIN', 'vendorAddress', 'buyerName', 'buyerGSTIN', 'buyerAddress'];
     
     Object.keys(bestCorrections).forEach(field => {
       const corr = bestCorrections[field];
@@ -501,10 +518,19 @@ function recalculateAndValidateMath(invoice: any): any {
     });
   }
 
-  let totalTaxable = 0;
-  let totalCgst = 0;
-  let totalSgst = 0;
-  let totalIgst = 0;
+  const extTaxable = parse(invoice.taxableAmount);
+  const extCgst = parse(invoice.cgst);
+  const extSgst = parse(invoice.sgst);
+  const extIgst = parse(invoice.igst);
+  const extGrandTotal = parse(invoice.grandTotal);
+  const extBalanceDue = parse(invoice.balanceDue);
+  const roundOff = parse(invoice.roundOff);
+  const advance = parse(invoice.advancePaid);
+
+  let calcTaxable = 0;
+  let calcCgst = 0;
+  let calcSgst = 0;
+  let calcIgst = 0;
 
   const vendorState = (invoice.vendorGSTIN || '').substring(0, 2);
   const buyerState = (invoice.buyerGSTIN || '').substring(0, 2);
@@ -522,62 +548,64 @@ function recalculateAndValidateMath(invoice: any): any {
       const taxLine = pct ? sub * (1 - d / 100) : sub - d;
       const lineTax = taxLine * (g / 100);
 
-      totalTaxable += taxLine;
+      calcTaxable += taxLine;
       if (isInterstate) {
-        totalIgst += lineTax;
+        calcIgst += lineTax;
       } else {
-        totalCgst += lineTax / 2;
-        totalSgst += lineTax / 2;
+        calcCgst += lineTax / 2;
+        calcSgst += lineTax / 2;
       }
     });
-
-    totalTaxable = Number(totalTaxable.toFixed(2));
-    totalCgst = Number(totalCgst.toFixed(2));
-    totalSgst = Number(totalSgst.toFixed(2));
-    totalIgst = Number(totalIgst.toFixed(2));
+    calcTaxable = Number(calcTaxable.toFixed(2));
+    calcCgst = Number(calcCgst.toFixed(2));
+    calcSgst = Number(calcSgst.toFixed(2));
+    calcIgst = Number(calcIgst.toFixed(2));
   } else {
-    totalTaxable = parse(invoice.taxableAmount);
+    // Fallback if no line items
+    calcTaxable = extTaxable;
     const gstRate = parse(invoice.gstRate);
-    const totalGst = Number((totalTaxable * (gstRate / 100)).toFixed(2));
-
-    if (totalTaxable > 0 && gstRate > 0) {
-      if (isInterstate || (parse(invoice.igst) > 0 && parse(invoice.cgst) === 0 && parse(invoice.sgst) === 0)) {
-        totalIgst = totalGst;
-        totalCgst = 0;
-        totalSgst = 0;
+    const totalGst = Number((calcTaxable * (gstRate / 100)).toFixed(2));
+    if (calcTaxable > 0 && gstRate > 0) {
+      if (isInterstate || (extIgst > 0 && extCgst === 0 && extSgst === 0)) {
+        calcIgst = totalGst;
       } else {
-        totalCgst = Number((totalGst / 2).toFixed(2));
-        totalSgst = Number((totalGst / 2).toFixed(2));
-        totalIgst = 0;
+        calcCgst = Number((totalGst / 2).toFixed(2));
+        calcSgst = Number((totalGst / 2).toFixed(2));
       }
-    } else {
-      // If we can't reliably recalculate, preserve the extracted values
-      totalCgst = parse(invoice.cgst);
-      totalSgst = parse(invoice.sgst);
-      totalIgst = parse(invoice.igst);
     }
   }
 
-  const totalTax = totalCgst + totalSgst + totalIgst;
-  const avgGstRate = totalTaxable > 0 ? Number(((totalTax / totalTaxable) * 100).toFixed(2)) : parse(invoice.gstRate);
-  const roundOff = parse(invoice.roundOff);
-  const grandTotal = Number((totalTaxable + totalTax + roundOff).toFixed(2));
-  const advance = parse(invoice.advancePaid);
-  const balanceDue = Number((grandTotal - advance).toFixed(2));
+  // Only use calculated values if extracted values are 0/missing
+  const finalTaxable = extTaxable > 0 ? extTaxable : calcTaxable;
+  const finalCgst = extCgst > 0 ? extCgst : calcCgst;
+  const finalSgst = extSgst > 0 ? extSgst : calcSgst;
+  const finalIgst = extIgst > 0 ? extIgst : calcIgst;
 
-  invoice.taxableAmount = totalTaxable;
-  invoice.cgst = totalCgst;
-  invoice.sgst = totalSgst;
-  invoice.igst = totalIgst;
+  const totalTax = finalCgst + finalSgst + finalIgst;
+  const calcGrandTotal = Number((finalTaxable + totalTax + roundOff).toFixed(2));
+  
+  // Use extracted grand total if available, otherwise fallback to calculated
+  const finalGrandTotal = extGrandTotal > 0 ? extGrandTotal : calcGrandTotal;
+  const calcBalanceDue = Number((finalGrandTotal - advance).toFixed(2));
+  const finalBalanceDue = extBalanceDue > 0 ? extBalanceDue : calcBalanceDue;
+
+  const avgGstRate = finalTaxable > 0 ? Number(((totalTax / finalTaxable) * 100).toFixed(2)) : parse(invoice.gstRate);
+
+  invoice.taxableAmount = finalTaxable;
+  invoice.cgst = finalCgst;
+  invoice.sgst = finalSgst;
+  invoice.igst = finalIgst;
   invoice.gstRate = avgGstRate;
-  invoice.grandTotal = grandTotal;
-  invoice.balanceDue = balanceDue;
+  invoice.grandTotal = finalGrandTotal;
+  invoice.balanceDue = finalBalanceDue;
 
   const errors: string[] = [];
-  if (totalTaxable <= 0) errors.push("Taxable amount is zero or negative.");
-  if (grandTotal <= 0) errors.push("Grand total is zero or negative.");
-  if (Math.abs(grandTotal - (totalTaxable + totalTax + roundOff)) > 0.1) {
-    errors.push("Grand total does not match the sum of taxable amount, GST, and round off.");
+  if (finalTaxable <= 0) errors.push("Taxable amount is zero or negative.");
+  if (finalGrandTotal <= 0) errors.push("Grand total is zero or negative.");
+  
+  // Warn if math is incorrect but DO NOT overwrite extracted grand total
+  if (Math.abs(finalGrandTotal - calcGrandTotal) > 0.5) {
+    errors.push(`Grand total (${finalGrandTotal}) does not match sum of taxable amount + tax + roundoff (${calcGrandTotal}).`);
   }
   
   invoice.validationErrors = errors;
