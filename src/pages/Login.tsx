@@ -32,7 +32,7 @@ export default function Login() {
     }
   };
 
-  const handleAuth = async (e: React.FormEvent) => {
+  const handleAuth = async (e: import('react').FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
       toast.error('Please enter both email and password');

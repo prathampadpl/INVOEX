@@ -90,19 +90,36 @@ export default function Dashboard() {
   const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / pageSize));
   const paginatedInvoices = filteredInvoices.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  const { approvedPercent, topVendors, dailyData } = useMemo(() => {
+  const {
+    approvedPercent,
+    approvedCount,
+    reviewCount,
+    avgConfidenceOverall,
+    topVendors,
+    dailyData
+  } = useMemo(() => {
     let approved = 0;
+    let reviewNeeded = 0;
+    let totalScoreSum = 0;
+    let totalScoreCount = 0;
+
     const vendors: Record<string, { count: number; confSum: number }> = {};
     const days: Record<string, { date: string; volume: number; approved: number; flagged: number }> = {};
 
     invoices.forEach(inv => {
+      // ⚡ Bolt: Consolidated metric calculations inside single pass over invoices
       if (inv.status === 'Approved') approved++;
+      if (inv.validationErrors?.length > 0 || inv.status === 'Ready for Review') reviewNeeded++;
+
+      const scores = inv.confidenceScores ? Object.values(inv.confidenceScores as Record<string, number>) : [];
+      if (scores.length > 0) {
+        totalScoreSum += scores.reduce((a: number, b: number) => a + b, 0);
+        totalScoreCount += scores.length;
+      }
       
       if (inv.vendorName) {
         if (!vendors[inv.vendorName]) vendors[inv.vendorName] = { count: 0, confSum: 0 };
         vendors[inv.vendorName].count++;
-        // Compute overall confidence from per-field confidenceScores map
-        const scores = inv.confidenceScores ? Object.values(inv.confidenceScores as Record<string, number>) : [];
         const avgConf = scores.length ? scores.reduce((a: number, b: number) => a + b, 0) / scores.length : 0;
         vendors[inv.vendorName].confSum += avgConf;
       }
@@ -117,6 +134,7 @@ export default function Dashboard() {
     });
 
     const approvedPercent = invoices.length ? Math.round((approved / invoices.length) * 100) : 0;
+    const avgConfidenceOverall = totalScoreCount ? (totalScoreSum / totalScoreCount).toFixed(1) : '0.0';
     
     const topVendors = Object.entries(vendors)
       .map(([name, stats]) => ({ name, count: stats.count, avgConf: stats.confSum / stats.count }))
@@ -125,7 +143,14 @@ export default function Dashboard() {
 
     const dailyData = Object.values(days).slice(-14);
 
-    return { approvedPercent, topVendors, dailyData };
+    return {
+      approvedPercent,
+      approvedCount: approved,
+      reviewCount: reviewNeeded,
+      avgConfidenceOverall,
+      topVendors,
+      dailyData
+    };
   }, [invoices]);
 
   const handleBulkStatusChange = async (newStatus: string) => {
@@ -213,7 +238,7 @@ export default function Dashboard() {
             <CardTitle className="text-sm font-semibold text-gray-600">Auto-Approved</CardTitle>
           </CardHeader>
           <CardContent className="flex items-end justify-between">
-            <div className="text-3xl font-bold text-gray-900">{invoices.filter(i => i.status === 'Approved').length}</div>
+            <div className="text-3xl font-bold text-gray-900">{approvedCount}</div>
             <div className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">{approvedPercent}%</div>
           </CardContent>
         </Card>
@@ -222,7 +247,7 @@ export default function Dashboard() {
             <CardTitle className="text-sm font-semibold text-gray-600">Flagged for Review</CardTitle>
           </CardHeader>
           <CardContent className="flex items-end justify-between">
-            <div className="text-3xl font-bold text-gray-900">{invoices.filter(i => i.validationErrors?.length > 0 || i.status === 'Ready for Review').length}</div>
+            <div className="text-3xl font-bold text-gray-900">{reviewCount}</div>
             <div className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">Needs review</div>
           </CardContent>
         </Card>
@@ -232,15 +257,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent className="flex items-end justify-between">
             <div className="text-3xl font-bold text-gray-900">
-             {(() => {
-               const allScores = invoices.flatMap(inv => 
-                 inv.confidenceScores ? Object.values(inv.confidenceScores as Record<string, number>) : []
-               );
-               const avg = allScores.length
-                 ? (allScores.reduce((a: number, b: number) => a + b, 0) / allScores.length).toFixed(1)
-                 : '0.0';
-               return <>{avg}%</>;
-             })()}
+              {avgConfidenceOverall}%
             </div>
             <div className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">AI score</div>
           </CardContent>
