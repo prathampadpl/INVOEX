@@ -16,4 +16,5 @@ test-ui.js
 test_keys.js
 .firebase/
 service-account.json
-auth-users.json
+auth-users.jsonfirebase-applet-config.json
+

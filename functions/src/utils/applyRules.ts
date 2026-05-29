@@ -14,6 +14,17 @@ export function applyRules(extractedData: any, rules: any[]): any {
                     (conditionOperator === 'endsWith' && v.endsWith(c));
       
       if (match) {
+        const ALLOWED_FIELDS = [
+          'vendorName', 'vendorGSTIN', 'buyerName', 'buyerGSTIN', 'invoiceNumber',
+          'invoiceDate', 'paymentMode', 'gstRate', 'taxableAmount', 'cgst', 'sgst',
+          'igst', 'grandTotal', 'advancePaid', 'balanceDue', 'roundOff'
+        ];
+        
+        if (!ALLOWED_FIELDS.includes(actionField)) {
+          console.warn(`[applyRules] Blocked attempt to mutate unapproved field: ${actionField}`);
+          continue;
+        }
+
         const isNumberField = [
           'gstRate', 'taxableAmount', 'cgst', 'sgst', 'igst', 'grandTotal',
           'advancePaid', 'balanceDue', 'roundOff'

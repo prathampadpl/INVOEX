@@ -70,7 +70,11 @@ export default function Settings() {
     if (!workspaceId) return;
     const invitesQ = query(collection(db, 'invites'), where('workspaceId', '==', workspaceId));
     const unsubscribeInvites = onSnapshot(invitesQ, (snapshot) => {
-      setInvites(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      const now = Date.now();
+      const validInvites = snapshot.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter((i: any) => !i.expiresAt || i.expiresAt > now);
+      setInvites(validInvites);
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'invites'));
     return unsubscribeInvites;
   }, [workspaceId]);
@@ -140,7 +144,8 @@ export default function Settings() {
         email: inviteEmail.toLowerCase().trim(),
         status: 'pending',
         invitedBy: user.uid,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 // 7 days expiry
       });
       setInviteEmail('');
       toast.success("Invite created for " + inviteEmail.trim());

@@ -21,12 +21,39 @@ export const extractInvoice = onCall(
     }
 
     const urlObj = new URL(fileUrl);
+    
+    // SSRF Mitigation: Only allow fetching from Firebase Storage
+    if (urlObj.hostname !== 'firebasestorage.googleapis.com') {
+      throw new HttpsError('invalid-argument', 'Invalid file URL domain.');
+    }
+
     const pathParts = decodeURIComponent(urlObj.pathname).split('/');
     const workspaceIdIndex = pathParts.indexOf('workspaces');
     if (workspaceIdIndex === -1) {
       throw new HttpsError('invalid-argument', 'Invalid workspace in fileUrl');
     }
     const workspaceId = pathParts[workspaceIdIndex + 1];
+
+    // IDOR Mitigation: Check workspace membership
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated.');
+    }
+    const memberDoc = await db.collection('workspaces').doc(workspaceId).collection('members').doc(request.auth.uid).get();
+    if (!memberDoc.exists) {
+      throw new HttpsError('permission-denied', 'User is not a member of this workspace.');
+    }
+
+    // Rate Limiting Mitigation
+    const rateLimitRef = db.collection('rate_limits').doc(request.auth.uid);
+    const rateLimitDoc = await rateLimitRef.get();
+    const now = Date.now();
+    if (rateLimitDoc.exists) {
+      const lastRequest = rateLimitDoc.data()?.lastRequest || 0;
+      if (now - lastRequest < 5000) { // 5 second cooldown
+        throw new HttpsError('resource-exhausted', 'Rate limit exceeded. Please wait a few seconds before trying again.');
+      }
+    }
+    await rateLimitRef.set({ lastRequest: now }, { merge: true });
 
     try {
       const response = await fetch(fileUrl);

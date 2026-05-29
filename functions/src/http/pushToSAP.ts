@@ -60,6 +60,12 @@ export const pushToSAP = onCall(
       throw new HttpsError('invalid-argument', 'Missing workspaceId or invoices payload.');
     }
 
+    // Check workspace membership
+    const memberDoc = await db.collection('workspaces').doc(workspaceId).collection('members').doc(request.auth.uid).get();
+    if (!memberDoc.exists) {
+      throw new HttpsError('permission-denied', 'User is not a member of this workspace.');
+    }
+
     // 2. Fetch Workspace SAP Config
     const sapDoc = await db.collection('workspaces').doc(workspaceId).collection('secrets').doc('sap').get();
     if (!sapDoc.exists) {

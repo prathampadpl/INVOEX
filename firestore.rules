@@ -3,7 +3,8 @@ service cloud.firestore {
   match /databases/{database}/documents {
     
     function isMember(workspaceId) {
-      return exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid));
+      let workspace = get(/databases/$(database)/documents/workspaces/$(workspaceId));
+      return (workspace != null && workspace.data.memberUids != null && request.auth.uid in workspace.data.memberUids) || exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid));
     }
     
     function isAdmin(workspaceId) {

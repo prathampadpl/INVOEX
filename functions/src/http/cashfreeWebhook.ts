@@ -56,7 +56,11 @@ export const cashfreeWebhookHandler = onRequest(
 
     try {
       if (eventType === 'SUBSCRIPTION_STATUS_CHANGED' && data?.subscription?.status === 'ACTIVE') {
-        await userRef.update({ plan: 'pro', updatedAt: Date.now() });
+        if (data?.subscription?.plan_id === 'invoex_pro') {
+          await userRef.update({ plan: 'pro', updatedAt: Date.now() });
+        } else {
+          console.warn(`[Cashfree] Ignored active subscription for unknown plan_id: ${data?.subscription?.plan_id}`);
+        }
       } else if (eventType === 'SUBSCRIPTION_STATUS_CHANGED' && (data?.subscription?.status === 'CANCELLED' || data?.subscription?.status === 'EXPIRED')) {
         await userRef.update({ plan: 'free', updatedAt: Date.now() });
       }
