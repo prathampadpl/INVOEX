@@ -38,7 +38,7 @@ Output strictly valid JSON array of objects with these keys:
 - advancePaid (number)
 - balanceDue (number)
 - paymentMode (string)
-- lineItems (array of objects with keys: description, hsnCode, quantity, unit, rate, amount, gstRate, cgst, sgst, igst)
+- lineItems (array of objects with keys: description, hsnCode, quantity, unit, rate, amount, discount (number), discountType (string, either "percent" or "flat"), gstRate, cgst, sgst, igst)
 - confidenceScores (object where keys are each of the above field names (except lineItems) and values are integers from 0 to 100 representing your confidence level in that specific field's extraction)
 - doubtfulFields (array of string field names you are unsure about)
 
