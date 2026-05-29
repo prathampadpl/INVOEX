@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { ZoomIn, ZoomOut, RotateCcw, ExternalLink } from 'lucide-react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/src/lib/store';
@@ -117,32 +117,35 @@ export default function Review() {
 
   const SuggestionInput = ({ field, label, value, options }: { field: string, label: string, value: string, options: string[] }) => {
     // Find closest match if it isn't an exact match
-    let closestMatch = "";
-    let closestDist = Infinity;
-    
-    if (value && value.trim() && options.length > 0) {
-      const lowerVal = value.trim().toLowerCase();
-      // If exact case-insensitive match exists, we're good
-      const exactMatch = options.find(o => o.toLowerCase() === lowerVal);
-      if (!exactMatch) {
-         options.forEach(opt => {
-           let dist = getDistance(lowerVal, opt.toLowerCase());
-           // Give a slight boost if startsWith or contains
-           if (opt.toLowerCase().includes(lowerVal)) dist -= 1;
-           if (dist < closestDist) {
-              closestDist = dist;
-              closestMatch = opt;
+    const closestMatch = useMemo(() => {
+      let match = "";
+      let closestDist = Infinity;
+      
+      if (value && value.trim() && options.length > 0) {
+        const lowerVal = value.trim().toLowerCase();
+        // If exact case-insensitive match exists, we're good
+        const exactMatch = options.find(o => o.toLowerCase() === lowerVal);
+        if (!exactMatch) {
+           options.forEach(opt => {
+             let dist = getDistance(lowerVal, opt.toLowerCase());
+             // Give a slight boost if startsWith or contains
+             if (opt.toLowerCase().includes(lowerVal)) dist -= 1;
+             if (dist < closestDist) {
+                closestDist = dist;
+                match = opt;
+             }
+           });
+           
+           // Only suggest if the distance is small relative to string length, 
+           // meaning it is likely a typo and not just a different name.
+           const maxAllowedDist = Math.max(3, Math.floor(value.length * 0.4));
+           if (closestDist > maxAllowedDist) {
+              match = ""; // don't suggest
            }
-         });
-         
-         // Only suggest if the distance is small relative to string length, 
-         // meaning it is likely a typo and not just a different name.
-         const maxAllowedDist = Math.max(3, Math.floor(value.length * 0.4));
-         if (closestDist > maxAllowedDist) {
-            closestMatch = ""; // don't suggest
-         }
+        }
       }
-    }
+      return match;
+    }, [value, options]);
 
     return (
       <div className="space-y-1 relative">
@@ -700,6 +703,11 @@ export default function Review() {
     };
   }, [objectUrls]);
 
+  const handleSaveRef = useRef(handleSave);
+  useEffect(() => {
+    handleSaveRef.current = handleSave;
+  }, [handleSave]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignore if user is typing in an input
@@ -715,10 +723,10 @@ export default function Review() {
       const key = e.key.toLowerCase();
       if (key === 'a') {
         e.preventDefault();
-        handleSave('Approved');
+        handleSaveRef.current('Approved');
       } else if (key === 'f') {
         e.preventDefault();
-        handleSave('Failed');
+        handleSaveRef.current('Failed');
       } else if (key === 's') {
         e.preventDefault();
         if (nextId) {
@@ -731,7 +739,7 @@ export default function Review() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [editData, invoice, workspaceId, id, navigate, nextId, location.state]);
+  }, [navigate, nextId, location.state]);
 
   if (loading) return <div className="p-8">Loading...</div>;
   if (!invoice) return null;

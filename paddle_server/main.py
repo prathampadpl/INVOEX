@@ -38,13 +38,21 @@ from sap_models import BatchInvoiceRequest, InvoiceStatusResponse
 import sap_client
 
 # ── PaddleOCR v5 ─────────────────────────────────────────────────────────────
-from paddleocr import PaddleOCR
+try:
+    from paddleocr import PaddleOCR
+    PADDLE_AVAILABLE = True
+except ImportError:
+    PaddleOCR = None
+    PADDLE_AVAILABLE = False
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
 )
 log = logging.getLogger("invoex-paddle")
+
+if not PADDLE_AVAILABLE:
+    log.warning("⚠️ paddleocr not installed. OCR endpoint will be disabled/mocked locally.")
 
 # ── Singleton OCR engine (warm on first request, then cached) ─────────────────
 _OCR_ENGINE: PaddleOCR | None = None
@@ -59,6 +67,11 @@ def get_engine() -> PaddleOCR:
       - text_det_thresh=0.3  : Lower threshold catches dense invoice tables
     """
     global _OCR_ENGINE
+    if not PADDLE_AVAILABLE:
+        raise HTTPException(
+            status_code=500,
+            detail="PaddleOCR is not installed in the local environment. Install 'paddleocr' and 'paddlepaddle' to use OCR endpoints."
+        )
     if _OCR_ENGINE is None:
         log.info("🚀 Initialising PP-OCRv5 engine… (first request, ~20-40s)")
         t0 = time.perf_counter()

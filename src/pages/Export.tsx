@@ -17,6 +17,8 @@ export default function Export() {
   const [filterEndDate, setFilterEndDate] = useState('');
   const [filterStatus, setFilterStatus] = useState('Approved');
   const [filterVendor, setFilterVendor] = useState('');
+  
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!workspaceId) return;
@@ -48,10 +50,16 @@ export default function Export() {
      return true;
   });
 
-  const handleExport = async () => {
-    if (filteredInvoices.length === 0) return alert('No invoices match the export filters.');
+  // Auto-select all when filters change
+  useEffect(() => {
+    setSelectedIds(new Set(filteredInvoices.map(i => i.id)));
+  }, [filterStartDate, filterEndDate, filterStatus, filterVendor, invoices.length]);
 
-    const csvData = filteredInvoices.map(inv => ({
+  const handleExport = async () => {
+    const invoicesToExport = filteredInvoices.filter(i => selectedIds.has(i.id));
+    if (invoicesToExport.length === 0) return alert('No invoices selected for export.');
+
+    const csvData = invoicesToExport.map(inv => ({
       'Invoice Number': inv.invoiceNumber || '',
       'Invoice Date': inv.invoiceDate || '',
       'Due Date': inv.dueDate || '',
@@ -97,7 +105,7 @@ export default function Export() {
           userId: currentUser.uid,
           filterParams: { filterStatus, filterVendor, filterStartDate, filterEndDate },
           format: 'CSV',
-          rowCount: filteredInvoices.length,
+          rowCount: invoicesToExport.length,
           createdAt: Date.now()
         });
       }
@@ -152,9 +160,9 @@ export default function Export() {
               </div>
            </div>
 
-           <Button onClick={handleExport} disabled={filteredInvoices.length === 0} className="bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-sm h-10 px-6">
+           <Button onClick={handleExport} disabled={selectedIds.size === 0} className="bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-sm h-10 px-6">
              <Download className="w-4 h-4 mr-2" />
-             Export {filteredInvoices.length} CSV rows
+             Export {selectedIds.size} CSV rows
            </Button>
         </CardContent>
       </Card>
@@ -162,13 +170,27 @@ export default function Export() {
       <Card className="w-full shadow-sm border-gray-200">
          <CardHeader className="pb-4">
             <CardTitle className="text-base font-bold text-gray-900 mb-1">Preview table</CardTitle>
-            <p className="text-sm text-gray-500">First 10 rows that match your export filters.</p>
+            <p className="text-sm text-gray-500">Select the rows you want to include in your export.</p>
          </CardHeader>
          <CardContent>
-            <div className="w-full overflow-x-auto">
+            <div className="w-full max-h-[600px] overflow-auto">
                <Table>
                   <TableHeader>
                      <TableRow className="border-gray-100">
+                        <TableHead className="w-12 text-center">
+                          <input 
+                            type="checkbox" 
+                            className="w-4 h-4 cursor-pointer"
+                            checked={filteredInvoices.length > 0 && selectedIds.size === filteredInvoices.length}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedIds(new Set(filteredInvoices.map(i => i.id)));
+                              } else {
+                                setSelectedIds(new Set());
+                              }
+                            }}
+                          />
+                        </TableHead>
                         <TableHead className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Invoice #</TableHead>
                         <TableHead className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Vendor</TableHead>
                         <TableHead className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Date</TableHead>
@@ -179,20 +201,33 @@ export default function Export() {
                   <TableBody>
                      {loading ? (
                         <TableRow>
-                           <TableCell colSpan={5} className="text-center py-12">
+                           <TableCell colSpan={6} className="text-center py-12">
                               <Loader2 className="h-6 w-6 animate-spin mx-auto text-gray-400 mb-2" />
                               <span className="text-sm text-gray-500">Loading data...</span>
                            </TableCell>
                         </TableRow>
                      ) : filteredInvoices.length === 0 ? (
                         <TableRow>
-                           <TableCell colSpan={5} className="text-center text-gray-400 py-12 text-sm">
+                           <TableCell colSpan={6} className="text-center text-gray-400 py-12 text-sm">
                               No rows match this export.
                            </TableCell>
                         </TableRow>
                      ) : (
-                        filteredInvoices.slice(0, 10).map((inv) => (
+                        filteredInvoices.map((inv) => (
                            <TableRow key={inv.id} className="border-gray-100">
+                              <TableCell className="text-center">
+                                <input 
+                                  type="checkbox" 
+                                  className="w-4 h-4 cursor-pointer"
+                                  checked={selectedIds.has(inv.id)}
+                                  onChange={(e) => {
+                                    const newSet = new Set(selectedIds);
+                                    if (e.target.checked) newSet.add(inv.id);
+                                    else newSet.delete(inv.id);
+                                    setSelectedIds(newSet);
+                                  }}
+                                />
+                              </TableCell>
                               <TableCell className="font-semibold text-gray-900 text-sm whitespace-nowrap">{inv.invoiceNumber}</TableCell>
                               <TableCell className="font-medium text-gray-600 text-sm whitespace-nowrap">{inv.vendorName}</TableCell>
                               <TableCell className="text-gray-500 text-sm whitespace-nowrap">{inv.invoiceDate}</TableCell>

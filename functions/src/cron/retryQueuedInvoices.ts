@@ -12,7 +12,7 @@ export const retryQueuedInvoices = onSchedule(
     region: 'us-east1',
     timeoutSeconds: 540,
     memory: '2GiB',
-    secrets: ['GEMINI_API_KEY', 'OPENROUTER_API_KEY']
+    secrets: ['GEMINI_API_KEY', 'OPENROUTER_API_KEY'],
   },
   async (event) => {
     console.log('[RetryCron] Starting retry cycle');

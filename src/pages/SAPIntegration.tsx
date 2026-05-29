@@ -11,8 +11,9 @@ import {
 } from 'lucide-react';
 
 import { useAuth } from '@/src/lib/store';
-import { db } from '@/src/lib/firebase';
+import { db, functions } from '@/src/lib/firebase';
 import { collection, query, orderBy, onSnapshot, doc, writeBatch } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
 
 export default function SAPIntegration() {
   const { workspaceId } = useAuth();
@@ -75,21 +76,14 @@ export default function SAPIntegration() {
       // Filter out invoices that are already APPROVED in SAP
       const pendingInvoices = invoices.filter(i => i.status !== 'APPROVED');
       const payload = {
+        workspaceId,
         invoices: pendingInvoices.map(({ status, sap_document_number, error_message, firebase_status, id, ...rest }) => rest)
       };
       
-      const API_BASE = import.meta.env.VITE_PADDLE_URL || 'http://localhost:8080';
-      const response = await fetch(`${API_BASE}/api/sap/push`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+      const pushToSAP = httpsCallable(functions, 'pushToSAP');
+      const response = await pushToSAP(payload);
       
-      if (!response.ok) {
-        throw new Error(`Server returned ${response.status}`);
-      }
-
-      const updatedStatuses = await response.json();
+      const updatedStatuses = response.data as any[];
       
       // Update Firebase with the new SAP statuses
       const batch = writeBatch(db);
@@ -123,9 +117,10 @@ export default function SAPIntegration() {
         return inv;
       }));
       
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error pushing to SAP", error);
-      alert("Failed to connect to backend server. Make sure Paddle Server is running on port 8080.");
+      alert(error.message || "Failed to connect to SAP backend. Please check your workspace SAP credentials and try again.");
+
       setInvoices(prev => prev.map(inv => 
         inv.status === 'PROCESSING' ? { ...inv, status: 'READY' } : inv
       ));

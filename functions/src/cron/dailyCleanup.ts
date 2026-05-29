@@ -8,11 +8,10 @@ const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 
 export const dailyCleanup = onSchedule(
   {
-    schedule: '0 2 * * *', // 02:00 AM daily
-    timeZone: 'Asia/Kolkata',
-    region: 'us-central1',
-    timeoutSeconds: 540,
-    memory: '512MiB',
+    schedule: '0 0 * * *',
+    region: 'us-east1',
+    timeoutSeconds: 300,
+    memory: '256MiB',
   },
   async () => {
     console.log(`[Cleanup] Starting plan-aware file purge.`);

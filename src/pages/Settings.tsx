@@ -25,6 +25,29 @@ export default function Settings() {
   const [members, setMembers] = useState<any[]>([]);
   const [invites, setInvites] = useState<any[]>([]);
 
+  const [sapUrl, setSapUrl] = useState('');
+  const [sapUsername, setSapUsername] = useState('');
+  const [sapPassword, setSapPassword] = useState('');
+  const [sapCompanyCode, setSapCompanyCode] = useState('');
+  const [isSavingSap, setIsSavingSap] = useState(false);
+
+  useEffect(() => {
+    if (!workspaceId) return;
+    if (!isAdmin) return;
+    const unsubscribe = onSnapshot(doc(db, `workspaces/${workspaceId}/secrets`, 'sap'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data) {
+          setSapUrl(data.url || '');
+          setSapUsername(data.username || '');
+          setSapPassword(data.password || '');
+          setSapCompanyCode(data.companyCode || '');
+        }
+      }
+    }, (error) => console.error(error));
+    return unsubscribe;
+  }, [workspaceId, isAdmin]);
+
   useEffect(() => {
     if (!workspaceId) return;
     const q = query(collection(db, `workspaces/${workspaceId}/rules`));
@@ -54,21 +77,29 @@ export default function Settings() {
 
   const handleAddRule = async () => {
     if (!workspaceId || !user) return;
+    if (!conditionValue.trim() || !actionValue.trim()) {
+      toast.error('Please enter both a match condition and an action value.');
+      return;
+    }
+    
     try {
       await addDoc(collection(db, `workspaces/${workspaceId}/rules`), {
         workspaceId,
         conditionField,
         conditionOperator,
-        conditionValue,
+        conditionValue: conditionValue.trim(),
         actionField,
-        actionValue,
+        actionValue: actionValue.trim(),
         createdBy: user.uid,
         createdAt: Date.now(),
         updatedAt: Date.now()
       });
       setConditionValue('');
       setActionValue('');
-    } catch (error) {
+      toast.success("Rule created successfully!");
+    } catch (error: any) {
+      console.error("Failed to add rule", error);
+      toast.error(error?.message || "Failed to create rule");
       handleFirestoreError(error, OperationType.CREATE, `workspaces/${workspaceId}/rules`);
     }
   };
@@ -80,6 +111,24 @@ export default function Settings() {
       handleFirestoreError(error, OperationType.DELETE, `workspaces/${workspaceId}/rules/${id}`);
     }
   }
+
+  const handleSaveSapConfig = async () => {
+    if (!workspaceId) return;
+    setIsSavingSap(true);
+    try {
+      await setDoc(doc(db, `workspaces/${workspaceId}/secrets`, 'sap'), {
+        url: sapUrl,
+        username: sapUsername,
+        password: sapPassword,
+        companyCode: sapCompanyCode
+      }, { merge: true });
+      toast.success("SAP credentials saved successfully");
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `workspaces/${workspaceId}/secrets/sap`);
+    } finally {
+      setIsSavingSap(false);
+    }
+  };
 
   const handleInvite = async () => {
     if (!workspaceId || !user || !inviteEmail) return;
@@ -119,39 +168,6 @@ export default function Settings() {
   return (
     <div className="w-full max-w-5xl mx-auto space-y-6">
       <h1 className="text-3xl font-bold tracking-tight">Workspace Settings</h1>
-      
-      <Card>
-        <CardHeader>
-          <CardTitle>Pricing Plan</CardTitle>
-          <p className="text-sm text-neutral-500">Upgrade or manage your billing plan.</p>
-        </CardHeader>
-        <CardContent className="space-y-6">
-           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="border border-blue-600 bg-blue-50 rounded-lg p-4">
-                 <h3 className="font-bold text-blue-900">Starter</h3>
-                 <div className="text-xs text-blue-700 font-medium mb-2">Current Plan</div>
-                 <div className="font-bold text-2xl text-blue-900 mb-1">$29<span className="text-sm font-medium text-blue-700">/mo</span></div>
-                 <div className="text-sm text-blue-800">Up to 500 invoices/month</div>
-              </div>
-              <div className="border border-gray-200 rounded-lg p-4 opacity-75 hover:opacity-100 transition-opacity cursor-pointer flex flex-col justify-between">
-                 <div>
-                    <h3 className="font-bold text-gray-900">Pro</h3>
-                    <div className="font-bold text-2xl text-gray-900 mt-2 mb-1">$99<span className="text-sm font-medium text-gray-500">/mo</span></div>
-                    <div className="text-sm text-gray-600">Up to 5,000 invoices/month</div>
-                 </div>
-                 <Button variant="outline" size="sm" className="w-full mt-4">Upgrade</Button>
-              </div>
-              <div className="border border-gray-200 rounded-lg p-4 opacity-75 hover:opacity-100 transition-opacity cursor-pointer flex flex-col justify-between">
-                 <div>
-                    <h3 className="font-bold text-gray-900">Enterprise</h3>
-                    <div className="font-bold text-2xl text-gray-900 mt-2 mb-1">Custom</div>
-                    <div className="text-sm text-gray-600">Unlimited invoices</div>
-                 </div>
-                 <Button variant="outline" size="sm" className="w-full mt-4">Contact Sales</Button>
-              </div>
-           </div>
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader>
@@ -206,7 +222,7 @@ export default function Settings() {
                <Input value={actionValue} onChange={e => setActionValue(e.target.value)} placeholder="e.g. 18" />
             </div>
             <div className="md:col-span-5 flex justify-end mt-2 h-[40px]">
-              <Button onClick={handleAddRule} className="w-full sm:w-auto">Create Rule</Button>
+              <Button onClick={handleAddRule} className="w-full sm:w-auto" disabled={!isAdmin}>Create Rule</Button>
             </div>
           </div>
           
@@ -239,13 +255,67 @@ export default function Settings() {
                        </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50 transition-colors" onClick={() => handleDeleteRule(r.id)}>Remove</Button>
+                      <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50 transition-colors" onClick={() => handleDeleteRule(r.id)} disabled={!isAdmin}>Remove</Button>
                     </TableCell>
                   </TableRow>
                 ))}
                 {rules.length === 0 && <TableRow><TableCell colSpan={3} className="text-center text-neutral-500 py-8">No custom rules defined.</TableCell></TableRow>}
               </TableBody>
             </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>SAP Integration</CardTitle>
+          <p className="text-sm text-neutral-500">Configure your SAP ERP connection details to push verified invoices directly to your SAP system.</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-4 max-w-2xl">
+            <div className="space-y-1.5">
+              <Label>SAP OData URL</Label>
+              <Input 
+                value={sapUrl} 
+                onChange={e => setSapUrl(e.target.value)} 
+                placeholder="https://your-sap-host:port/sap/opu/odata/..." 
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>Username</Label>
+                <Input 
+                  value={sapUsername} 
+                  onChange={e => setSapUsername(e.target.value)} 
+                  placeholder="SAP Username" 
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Password</Label>
+                <Input 
+                  type="password"
+                  value={sapPassword} 
+                  onChange={e => setSapPassword(e.target.value)} 
+                  placeholder="••••••••" 
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Company Code (Optional)</Label>
+              <Input 
+                value={sapCompanyCode} 
+                onChange={e => setSapCompanyCode(e.target.value)} 
+                placeholder="e.g. 1000" 
+              />
+            </div>
+            <div className="flex justify-end pt-2">
+              <Button onClick={handleSaveSapConfig} disabled={isSavingSap || !isAdmin}>
+                {isSavingSap ? "Saving..." : "Save SAP Credentials"}
+              </Button>
+            </div>
+            {!isAdmin && (
+              <p className="text-xs text-amber-600 text-right mt-1">Only workspace admins can modify SAP credentials.</p>
+            )}
           </div>
         </CardContent>
       </Card>

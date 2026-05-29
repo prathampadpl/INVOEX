@@ -23,7 +23,6 @@ export default function AuthLayout() {
         </Link>
         <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-gray-600">
           <Link to="/" className="hover:text-black">Features</Link>
-          <Link to="/" className="hover:text-black">Pricing</Link>
           <Link to="/dashboard" className="hover:text-black">Dashboard</Link>
         </nav>
         <Link to="/login" className={buttonVariants({ variant: "default", className: "bg-blue-600 hover:bg-blue-700 text-white shadow-sm" })}>

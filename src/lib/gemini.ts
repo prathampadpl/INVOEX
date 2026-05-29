@@ -204,8 +204,7 @@ async function tryGeminiModel(
   knownVendorsString: string,
   signal: AbortSignal
 ): Promise<{ data: any[], extractedBy: string }> {
-  const fallbackGemini = ['AIzaS', 'yD397sDHir', '_cXzNHykcKQXKT', 'QjnG80BmW0'].join('');
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY || fallbackGemini;
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY is missing in frontend env');
   
   const genAI = new GoogleGenerativeAI(apiKey);
@@ -248,8 +247,7 @@ async function tryOpenRouterModel(
   knownVendorsString: string,
   signal: AbortSignal
 ): Promise<{ data: any[], extractedBy: string }> {
-  const fallbackOR = ['sk-or-v1', '-42d5ecbe', '50dd005c0ba', '4a7eb846d8920', '2d9f480dd757b', 'ee3c644f3485', 'f864788'].join('');
-  const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY || import.meta.env.OPENROUTER_API_KEY || fallbackOR;
+  const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY || import.meta.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     console.warn('VITE_OPENROUTER_API_KEY is missing, skipping OpenRouter models');
     throw new Error('OPENROUTER_API_KEY is missing in frontend env');
