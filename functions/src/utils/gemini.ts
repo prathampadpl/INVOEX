@@ -74,8 +74,7 @@ function isRetryableError(err: any): boolean {
 // Result validation
 function isExtractionUsable(data: any): boolean {
   if (!data) return false;
-  const required = ['vendorName', 'invoiceNumber', 'grandTotal'];
-  return required.some(field => data[field] && data[field] !== 0 && data[field] !== '');
+  return !!data.vendorName && !!data.grandTotal && data.grandTotal !== 0;
 }
 
 // Sanitize and populate confidence scores + doubtfulFields
@@ -460,7 +459,7 @@ async function applyHistoricalCorrections(invoice: any, workspaceId: string): Pr
       const originalStr = String(corr.original_value === null || corr.original_value === undefined ? '' : corr.original_value).trim().toLowerCase();
 
       if (isStatic) {
-        if (corr.corrected_value) {
+        if (corr.corrected_value && corr.occurrence_count >= 2) {
           const isNumberField = ['taxableAmount', 'cgst', 'sgst', 'igst', 'gstRate', 'roundOff', 'grandTotal', 'advancePaid', 'balanceDue'].includes(field);
           invoice[field] = isNumberField ? parseFloat(corr.corrected_value) : corr.corrected_value;
         }

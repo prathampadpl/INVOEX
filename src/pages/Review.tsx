@@ -542,6 +542,24 @@ export default function Review() {
                   occurrence_count: increment(1),
                   updated_at: Date.now()
                }, { merge: true });
+
+               // Bootstrap vendor name corrections to ensure self-learning loop isn't broken
+               if (field === 'vendorName') {
+                 try {
+                   const { query, where, getDocs, writeBatch } = await import('firebase/firestore');
+                   const corrQuery = query(collection(db, `workspaces/${workspaceId}/corrections_log`), where('vendor_name', '==', original));
+                   const corrSnap = await getDocs(corrQuery);
+                   if (!corrSnap.empty) {
+                     const batch = writeBatch(db);
+                     corrSnap.forEach(docSnap => {
+                        batch.update(docSnap.ref, { vendor_name: String(vendorName).substring(0, 200) });
+                     });
+                     await batch.commit();
+                   }
+                 } catch (err) {
+                   console.error("Failed to bootstrap old corrections to new vendor name", err);
+                 }
+               }
             } catch(e) {
                console.error("Error logging correction", e);
             }
@@ -569,7 +587,7 @@ export default function Review() {
       if (hasUpdates) {
         try {
           const invoicesColl = collection(db, `workspaces/${workspaceId}/invoices`);
-          const q = query(invoicesColl);
+          const q = query(invoicesColl, orderBy('uploadedAt', 'desc'), limit(500));
           const querySnapshot = await getDocs(q);
           
           const batches = [writeBatch(db)];
