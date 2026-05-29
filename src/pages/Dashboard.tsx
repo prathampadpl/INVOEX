@@ -101,8 +101,10 @@ export default function Dashboard() {
       if (inv.vendorName) {
         if (!vendors[inv.vendorName]) vendors[inv.vendorName] = { count: 0, confSum: 0 };
         vendors[inv.vendorName].count++;
-        // Compute overall confidence from per-field confidenceScores map
-        const scores = inv.confidenceScores ? Object.values(inv.confidenceScores as Record<string, number>) : [];
+        // Compute overall confidence from per-field confidenceScores map, ignoring empty fields
+        const scores = inv.confidenceScores ? Object.entries(inv.confidenceScores as Record<string, number>)
+          .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
+          .map(([, score]) => score as number) : [];
         const avgConf = scores.length ? scores.reduce((a: number, b: number) => a + b, 0) / scores.length : 0;
         vendors[inv.vendorName].confSum += avgConf;
       }
@@ -234,7 +236,9 @@ export default function Dashboard() {
             <div className="text-3xl font-bold text-gray-900">
              {(() => {
                const allScores = invoices.flatMap(inv => 
-                 inv.confidenceScores ? Object.values(inv.confidenceScores as Record<string, number>) : []
+                 inv.confidenceScores ? Object.entries(inv.confidenceScores as Record<string, number>)
+                   .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
+                   .map(([, score]) => score as number) : []
                );
                const avg = allScores.length
                  ? (allScores.reduce((a: number, b: number) => a + b, 0) / allScores.length).toFixed(1)
@@ -459,7 +463,9 @@ export default function Dashboard() {
                     </TableCell>
                     <TableCell>
                       {inv.confidenceScores ? (() => {
-                        const vals = Object.values(inv.confidenceScores as Record<string, number>);
+                        const vals = Object.entries(inv.confidenceScores as Record<string, number>)
+                          .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
+                          .map(([, score]) => score as number);
                         const avg = vals.length ? vals.reduce((a: number, b: number) => a + b, 0) / vals.length : 0;
                         return (
                           <span className={`text-sm font-semibold ${

@@ -108,6 +108,8 @@ export default function Analytics() {
     const cs = inv.confidenceScores;
     if (!cs || typeof cs !== 'object') return;
     Object.entries(cs as Record<string, number>).forEach(([field, score]) => {
+      // Skip empty fields so optional missing fields don't artificially lower the average
+      if (inv[field] === undefined || inv[field] === null || inv[field] === '') return;
       if (!fieldConfSum[field]) fieldConfSum[field] = { sum: 0, count: 0 };
       fieldConfSum[field].sum += score;
       fieldConfSum[field].count++;

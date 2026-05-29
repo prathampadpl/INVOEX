@@ -108,7 +108,7 @@ function sanitizeExtractionResult(arr: any[]): any[] {
     fields.forEach(field => {
       if (item.confidenceScores[field] === undefined || item.confidenceScores[field] === null) {
         const val = item[field];
-        if (val !== undefined && val !== null && val !== '' && val !== 0) {
+        if (val !== undefined && val !== null && val !== '') {
           item.confidenceScores[field] = 90;
         } else {
           item.confidenceScores[field] = 0;
@@ -120,9 +120,12 @@ function sanitizeExtractionResult(arr: any[]): any[] {
       }
     });
 
-    // Compute overallConfidence as the average of the field confidence scores
-    const scores = Object.values(item.confidenceScores) as number[];
-    item.overallConfidence = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+    // Compute overallConfidence as the average of the confidence scores for fields that are actually present
+    const extractedScores = Object.entries(item.confidenceScores)
+      .filter(([field]) => item[field] !== undefined && item[field] !== null && item[field] !== '')
+      .map(([, score]) => score as number);
+      
+    item.overallConfidence = extractedScores.length ? Math.round(extractedScores.reduce((a, b) => a + b, 0) / extractedScores.length) : 0;
 
     return item;
   });
