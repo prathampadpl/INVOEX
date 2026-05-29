@@ -238,28 +238,25 @@ export default function Review() {
             });
 
             data.lineItems = mergedItems.map((item: any) => {
-              let q = Number(item.quantity);
-              let r = Number(item.rate);
-              let a = Number(item.amount);
+              let q = parseFloat(item.quantity);
+              let r = parseFloat(item.rate);
+              let a = parseFloat(item.amount);
+              let disc = parseFloat(item.discount) || 0;
+              let isPct = item.discountType === 'percent';
+              let gst = parseFloat(item.gstRate) || 0;
               
               const isQ = !isNaN(q) && item.quantity !== null && item.quantity !== undefined && item.quantity !== '';
               const isR = !isNaN(r) && item.rate !== null && item.rate !== undefined && item.rate !== '';
               const isA = !isNaN(a) && item.amount !== null && item.amount !== undefined && item.amount !== '';
               
               if (isQ && isR && !isA) {
-                 item.amount = Number((q * r).toFixed(2));
+                 const sub = q * r;
+                 const taxLine = isPct ? sub * (1 - disc / 100) : sub - disc;
+                 item.amount = Number((taxLine * (1 + gst / 100)).toFixed(2));
               } else if (isA && isQ && !isR && q !== 0) {
                  item.rate = Number((a / q).toFixed(2));
               } else if (isA && isR && !isQ && r !== 0) {
                  item.quantity = Number((a / r).toFixed(2));
-              } else if (isQ && isR && isA) {
-                 if (Math.abs(q * r - a) > 0.05) {
-                    // Try to preserve amount, re-evaluate quantity or rate if there might have been OCR errors.
-                    // But if amount is present, usually user trusts the amount printed on the total. 
-                    // Let's just adjust amount to match Q * R to be safe, or just leave it.
-                    // Actually, the prompt says "prioritizing math validation", so letting Amount = Q * R is good.
-                    item.amount = Number((q * r).toFixed(2));
-                 }
               }
               return item;
             });
