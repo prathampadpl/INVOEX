@@ -1,0 +1,3 @@
+## 2024-05-23 - Hoisting inside useMemo array operations
+**Learning:** Performing `new Date(string).getTime()` and `.toLowerCase()` inside large `Array.filter()` operations (like filtering invoices on the Dashboard and Export pages) causes O(N) execution of relatively expensive string manipulation and date parsing logic. This compounds with React re-renders if the array filtering is unmemoized (as was the case in `Export.tsx`).
+**Action:** When filtering or sorting data sets based on user input, always parse the input (e.g., date ranges, lowercased search queries) once *outside* the filter loop, and ensure the resulting array derivation is wrapped in a `useMemo` hook to prevent redundant processing.
