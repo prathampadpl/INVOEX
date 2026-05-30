@@ -5,6 +5,7 @@ import { auth } from '@/src/lib/firebase';
 import { FileText, Upload, BarChart2, Brain } from 'lucide-react';
 import { useAuth } from '@/src/lib/store';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import ChatWidget from '@/src/components/ChatWidget';
 
 export default function MainLayout() {
   const navigate = useNavigate();
@@ -91,6 +92,7 @@ export default function MainLayout() {
       <main className="flex-1 w-full max-w-full overflow-x-hidden overflow-y-auto p-6 md:p-12">
         <Outlet />
       </main>
+      <ChatWidget />
     </div>
   );
 }
