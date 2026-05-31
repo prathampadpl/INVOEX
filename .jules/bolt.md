@@ -1,0 +1,3 @@
+## 2024-06-01 - [Hoisting Expensive Parsing Operations in Array Iteration]
+**Learning:** Found instances of executing constant calculation `new Date(string).getTime()` and `.toLowerCase()` inside a `.filter` array iteration method inside a `useMemo` block. This is an anti-pattern as it runs expensive parsing logic for every single element O(n) instead of just once.
+**Action:** Always hoist variables that don't depend on iteration element parameters outside the mapping or filtering loop when doing bulk array transformation to improve memory efficiency and save milliseconds during re-renders, especially on large data collections like fetching a whole list of invoices.
