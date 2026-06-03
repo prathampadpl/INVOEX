@@ -47,20 +47,26 @@ export default function Dashboard() {
   }, [workspaceId]);
 
   const filteredInvoices = useMemo(() => {
+    // ⚡ Bolt Performance Optimization:
+    // Hoist expensive parse/lowerCase operations outside the O(n) filter loop
+    // This prevents recalculating the same constant values for every single invoice
+    const q = searchQuery ? searchQuery.toLowerCase() : null;
+    const startFilterTime = filterStartDate ? new Date(filterStartDate).getTime() : null;
+    const endFilterTime = filterEndDate ? new Date(filterEndDate).getTime() + 86400000 : null;
+
     let result = invoices.filter(inv => {
       if (statusFilter !== 'All statuses' && inv.status !== statusFilter) return false;
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
+      if (q) {
         if (!inv.vendorName?.toLowerCase().includes(q) && !inv.invoiceNumber?.toLowerCase().includes(q)) {
           return false;
         }
       }
       
-      if (filterStartDate) {
-        if (inv.uploadedAt && inv.uploadedAt < new Date(filterStartDate).getTime()) return false;
+      if (startFilterTime && inv.uploadedAt) {
+        if (inv.uploadedAt < startFilterTime) return false;
       }
-      if (filterEndDate) {
-        if (inv.uploadedAt && inv.uploadedAt > new Date(filterEndDate).getTime() + 86400000) return false;
+      if (endFilterTime && inv.uploadedAt) {
+        if (inv.uploadedAt > endFilterTime) return false;
       }
 
       return true;
@@ -90,10 +96,11 @@ export default function Dashboard() {
   const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / pageSize));
   const paginatedInvoices = filteredInvoices.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  const { approvedPercent, topVendors, dailyData } = useMemo(() => {
+  const { approvedPercent, topVendors, dailyData, avgConfidence } = useMemo(() => {
     let approved = 0;
     const vendors: Record<string, { count: number; confSum: number }> = {};
     const days: Record<string, { date: string; volume: number; approved: number; flagged: number }> = {};
+    const allScores: number[] = [];
 
     invoices.forEach(inv => {
       if (inv.status === 'Approved') approved++;
@@ -107,6 +114,18 @@ export default function Dashboard() {
           .map(([, score]) => score as number) : [];
         const avgConf = scores.length ? scores.reduce((a: number, b: number) => a + b, 0) / scores.length : 0;
         vendors[inv.vendorName].confSum += avgConf;
+
+        if (scores.length > 0) {
+          allScores.push(...scores);
+        }
+      } else if (inv.confidenceScores) {
+        // Handle invoices without vendor names for overall avg calculation
+        const scores = Object.entries(inv.confidenceScores as Record<string, number>)
+          .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
+          .map(([, score]) => score as number);
+        if (scores.length > 0) {
+          allScores.push(...scores);
+        }
       }
 
       if (inv.uploadedAt) {
@@ -127,7 +146,14 @@ export default function Dashboard() {
 
     const dailyData = Object.values(days).slice(-14);
 
-    return { approvedPercent, topVendors, dailyData };
+    // ⚡ Bolt Performance Optimization:
+    // Move O(N) array mapping and reduction operation from JSX render body
+    // into useMemo hook to avoid recalculation on every re-render (e.g. checkbox clicks)
+    const avgConfidence = allScores.length
+      ? (allScores.reduce((a: number, b: number) => a + b, 0) / allScores.length).toFixed(1)
+      : '0.0';
+
+    return { approvedPercent, topVendors, dailyData, avgConfidence };
   }, [invoices]);
 
   const handleBulkStatusChange = async (newStatus: string) => {
@@ -234,17 +260,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent className="flex items-end justify-between">
             <div className="text-3xl font-bold text-gray-900">
-             {(() => {
-               const allScores = invoices.flatMap(inv => 
-                 inv.confidenceScores ? Object.entries(inv.confidenceScores as Record<string, number>)
-                   .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
-                   .map(([, score]) => score as number) : []
-               );
-               const avg = allScores.length
-                 ? (allScores.reduce((a: number, b: number) => a + b, 0) / allScores.length).toFixed(1)
-                 : '0.0';
-               return <>{avg}%</>;
-             })()}
+             {avgConfidence}%
             </div>
             <div className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">AI score</div>
           </CardContent>

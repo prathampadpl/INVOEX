@@ -1,0 +1,3 @@
+## 2024-06-03 - Hoisting and Memoization in Array Manipulations
+**Learning:** Found a common anti-pattern where expensive operations like `new Date()` and `.toLowerCase()` were being called repeatedly inside tight `filter` or `map` loops, and where `O(N)` reductions (like score aggregation) were happening on every render inside the JSX body directly. Since this app triggers re-renders on every selection (e.g., checkboxes), this causes noticeable UI jank as N scales.
+**Action:** Always wrap derived list logic in `useMemo` and aggressively hoist any constant calculations (dates, regexes, toLowerCase strings) out of the iteration body prior to processing the array.
