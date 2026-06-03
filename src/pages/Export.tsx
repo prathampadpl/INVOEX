@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/src/lib/store';
 import { db, handleFirestoreError, OperationType } from '@/src/lib/firebase';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
@@ -36,19 +36,27 @@ export default function Export() {
     return unsubscribe;
   }, [workspaceId]);
 
-  const filteredInvoices = invoices.filter(i => {
-     if (filterStatus !== 'All' && i.status !== filterStatus) return false;
-     if (filterVendor && !i.vendorName?.toLowerCase().includes(filterVendor.toLowerCase())) return false;
-     
-     if (filterStartDate && i.invoiceDate) {
-        if (new Date(i.invoiceDate) < new Date(filterStartDate)) return false;
-     }
-     if (filterEndDate && i.invoiceDate) {
-        if (new Date(i.invoiceDate) > new Date(filterEndDate)) return false;
-     }
-     
-     return true;
-  });
+  const filteredInvoices = useMemo(() => {
+    // ⚡ Bolt Performance Optimization:
+    // Hoist expensive date parsing and string lowercasing outside the O(n) filter loop
+    // Wrap in useMemo to prevent recalculating on every re-render (e.g. checkbox clicks)
+    const vendorQuery = filterVendor ? filterVendor.toLowerCase() : null;
+    const startFilterDate = filterStartDate ? new Date(filterStartDate) : null;
+    const endFilterDate = filterEndDate ? new Date(filterEndDate) : null;
+
+    return invoices.filter(i => {
+       if (filterStatus !== 'All' && i.status !== filterStatus) return false;
+       if (vendorQuery && !i.vendorName?.toLowerCase().includes(vendorQuery)) return false;
+
+       if (i.invoiceDate) {
+          const invDate = new Date(i.invoiceDate);
+          if (startFilterDate && invDate < startFilterDate) return false;
+          if (endFilterDate && invDate > endFilterDate) return false;
+       }
+
+       return true;
+    });
+  }, [invoices, filterStatus, filterVendor, filterStartDate, filterEndDate]);
 
   // Auto-select all when filters change
   useEffect(() => {
