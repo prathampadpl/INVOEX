@@ -1,0 +1,3 @@
+## 2024-05-18 - Hoisting Expensive Date Parsing in Render Loops
+**Learning:** Parsing `new Date()` directly inside an array method (like `.filter()`) runs O(N) times and can cause significant UI jank when the array grows large. This was found in the `filteredInvoices` memo hook, where `filterStartDate` and `filterEndDate` were converted to timestamps for every invoice record during each filter execution.
+**Action:** Always inspect array methods (especially inside `useMemo` or render functions) for constant computations that can be hoisted. Calculate derived filter boundaries once before the loop to reduce it to an O(1) operation.
