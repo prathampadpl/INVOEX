@@ -1,0 +1,3 @@
+## 2024-05-19 - Dashboard & Export Filtering Optimization
+**Learning:** Found an anti-pattern in the codebase where expensive date parsing (`new Date().getTime()`) and string manipulation (`.toLowerCase()`) were executed directly inside `.filter()` operations on large arrays (like invoices list). Additionally, derived lists in React components were not wrapped in `useMemo`, causing O(N) filtering to re-evaluate on every render unnecessarily.
+**Action:** Always hoist static `.toLowerCase()` transforms and Date-to-Timestamp conversions outside array iteration blocks. Wrap all heavy list-filtering and derived UI states in `useMemo` with appropriate dependency arrays to avoid jank.

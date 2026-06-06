@@ -47,20 +47,26 @@ export default function Dashboard() {
   }, [workspaceId]);
 
   const filteredInvoices = useMemo(() => {
+    // ⚡ Bolt Performance Optimization:
+    // Hoisting expensive string operations and date parsing outside the filter loop
+    // to prevent O(N) redundant calculations on large invoice lists.
+    const searchQ = searchQuery ? searchQuery.toLowerCase() : '';
+    const startDateMs = filterStartDate ? new Date(filterStartDate).getTime() : null;
+    const endDateMs = filterEndDate ? new Date(filterEndDate).getTime() + 86400000 : null;
+
     let result = invoices.filter(inv => {
       if (statusFilter !== 'All statuses' && inv.status !== statusFilter) return false;
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
-        if (!inv.vendorName?.toLowerCase().includes(q) && !inv.invoiceNumber?.toLowerCase().includes(q)) {
+      if (searchQ) {
+        if (!inv.vendorName?.toLowerCase().includes(searchQ) && !inv.invoiceNumber?.toLowerCase().includes(searchQ)) {
           return false;
         }
       }
       
-      if (filterStartDate) {
-        if (inv.uploadedAt && inv.uploadedAt < new Date(filterStartDate).getTime()) return false;
+      if (startDateMs && inv.uploadedAt) {
+        if (inv.uploadedAt < startDateMs) return false;
       }
-      if (filterEndDate) {
-        if (inv.uploadedAt && inv.uploadedAt > new Date(filterEndDate).getTime() + 86400000) return false;
+      if (endDateMs && inv.uploadedAt) {
+        if (inv.uploadedAt > endDateMs) return false;
       }
 
       return true;
