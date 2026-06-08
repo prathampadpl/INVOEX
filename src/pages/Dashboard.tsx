@@ -37,7 +37,31 @@ export default function Dashboard() {
     const q = query(collection(db, path), orderBy('uploadedAt', 'desc'));
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // ⚡ Bolt: Performance Optimization
+      // Pre-compute average confidence per invoice once during data fetch.
+      // This prevents O(N) recalculations on every re-render (e.g., when filtering/sorting).
+      const data = snapshot.docs.map(doc => {
+        const inv = { id: doc.id, ...doc.data() } as any;
+        let _computedAvgConf: number | undefined;
+        let validScoresCount = 0;
+        let totalScoreSum = 0;
+
+        if (inv.confidenceScores) {
+          const scores = Object.entries(inv.confidenceScores as Record<string, number>)
+            .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
+            .map(([, score]) => score as number);
+          if (scores.length > 0) {
+            validScoresCount = scores.length;
+            totalScoreSum = scores.reduce((a, b) => a + b, 0);
+            _computedAvgConf = totalScoreSum / validScoresCount;
+          }
+        }
+
+        inv._computedAvgConf = _computedAvgConf;
+        inv._validScoresCount = validScoresCount;
+        inv._totalScoreSum = totalScoreSum;
+        return inv;
+      });
       setInvoices(data);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, path);
@@ -90,23 +114,29 @@ export default function Dashboard() {
   const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / pageSize));
   const paginatedInvoices = filteredInvoices.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  const { approvedPercent, topVendors, dailyData } = useMemo(() => {
+  const { approvedPercent, topVendors, dailyData, flaggedCount, overallAvgConf } = useMemo(() => {
     let approved = 0;
+    let flaggedCount = 0;
+    let totalGlobalScoreSum = 0;
+    let totalGlobalScoresCount = 0;
     const vendors: Record<string, { count: number; confSum: number }> = {};
     const days: Record<string, { date: string; volume: number; approved: number; flagged: number }> = {};
 
     invoices.forEach(inv => {
       if (inv.status === 'Approved') approved++;
-      
+      if (inv.validationErrors?.length > 0 || inv.status === 'Ready for Review') flaggedCount++;
+
+      // Use pre-computed confidence metrics to accurately calculate the global overall mean,
+      // without recalculating object entries each time
+      if (inv._validScoresCount && inv._validScoresCount > 0) {
+        totalGlobalScoreSum += (inv._totalScoreSum || 0);
+        totalGlobalScoresCount += inv._validScoresCount;
+      }
+
       if (inv.vendorName) {
         if (!vendors[inv.vendorName]) vendors[inv.vendorName] = { count: 0, confSum: 0 };
         vendors[inv.vendorName].count++;
-        // Compute overall confidence from per-field confidenceScores map, ignoring empty fields
-        const scores = inv.confidenceScores ? Object.entries(inv.confidenceScores as Record<string, number>)
-          .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
-          .map(([, score]) => score as number) : [];
-        const avgConf = scores.length ? scores.reduce((a: number, b: number) => a + b, 0) / scores.length : 0;
-        vendors[inv.vendorName].confSum += avgConf;
+        vendors[inv.vendorName].confSum += (inv._computedAvgConf || 0);
       }
 
       if (inv.uploadedAt) {
@@ -119,6 +149,7 @@ export default function Dashboard() {
     });
 
     const approvedPercent = invoices.length ? Math.round((approved / invoices.length) * 100) : 0;
+    const overallAvgConf = totalGlobalScoresCount > 0 ? (totalGlobalScoreSum / totalGlobalScoresCount).toFixed(1) : '0.0';
     
     const topVendors = Object.entries(vendors)
       .map(([name, stats]) => ({ name, count: stats.count, avgConf: stats.confSum / stats.count }))
@@ -127,7 +158,7 @@ export default function Dashboard() {
 
     const dailyData = Object.values(days).slice(-14);
 
-    return { approvedPercent, topVendors, dailyData };
+    return { approvedPercent, topVendors, dailyData, flaggedCount, overallAvgConf };
   }, [invoices]);
 
   const handleBulkStatusChange = async (newStatus: string) => {
@@ -224,7 +255,7 @@ export default function Dashboard() {
             <CardTitle className="text-sm font-semibold text-gray-600">Flagged for Review</CardTitle>
           </CardHeader>
           <CardContent className="flex items-end justify-between">
-            <div className="text-3xl font-bold text-gray-900">{invoices.filter(i => i.validationErrors?.length > 0 || i.status === 'Ready for Review').length}</div>
+            <div className="text-3xl font-bold text-gray-900">{flaggedCount}</div>
             <div className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">Needs review</div>
           </CardContent>
         </Card>
@@ -234,17 +265,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent className="flex items-end justify-between">
             <div className="text-3xl font-bold text-gray-900">
-             {(() => {
-               const allScores = invoices.flatMap(inv => 
-                 inv.confidenceScores ? Object.entries(inv.confidenceScores as Record<string, number>)
-                   .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
-                   .map(([, score]) => score as number) : []
-               );
-               const avg = allScores.length
-                 ? (allScores.reduce((a: number, b: number) => a + b, 0) / allScores.length).toFixed(1)
-                 : '0.0';
-               return <>{avg}%</>;
-             })()}
+             {overallAvgConf}%
             </div>
             <div className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">AI score</div>
           </CardContent>
@@ -462,19 +483,13 @@ export default function Dashboard() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      {inv.confidenceScores ? (() => {
-                        const vals = Object.entries(inv.confidenceScores as Record<string, number>)
-                          .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
-                          .map(([, score]) => score as number);
-                        const avg = vals.length ? vals.reduce((a: number, b: number) => a + b, 0) / vals.length : 0;
-                        return (
-                          <span className={`text-sm font-semibold ${
-                            avg > 80 ? 'text-emerald-600' : avg > 50 ? 'text-amber-600' : 'text-red-600'
-                          }`}>
-                            {avg.toFixed(1)}%
-                          </span>
-                        );
-                      })() : (
+                      {inv._computedAvgConf !== undefined ? (
+                        <span className={`text-sm font-semibold ${
+                          inv._computedAvgConf > 80 ? 'text-emerald-600' : inv._computedAvgConf > 50 ? 'text-amber-600' : 'text-red-600'
+                        }`}>
+                          {inv._computedAvgConf.toFixed(1)}%
+                        </span>
+                      ) : (
                         <span className="text-gray-300">-</span>
                       )}
                     </TableCell>
