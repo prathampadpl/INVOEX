@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/src/lib/store';
 import { db, handleFirestoreError, OperationType } from '@/src/lib/firebase';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
@@ -36,24 +36,30 @@ export default function Export() {
     return unsubscribe;
   }, [workspaceId]);
 
-  const filteredInvoices = invoices.filter(i => {
-     if (filterStatus !== 'All' && i.status !== filterStatus) return false;
-     if (filterVendor && !i.vendorName?.toLowerCase().includes(filterVendor.toLowerCase())) return false;
-     
-     if (filterStartDate && i.invoiceDate) {
-        if (new Date(i.invoiceDate) < new Date(filterStartDate)) return false;
-     }
-     if (filterEndDate && i.invoiceDate) {
-        if (new Date(i.invoiceDate) > new Date(filterEndDate)) return false;
-     }
-     
-     return true;
-  });
+  const filteredInvoices = React.useMemo(() => {
+    const q = filterVendor ? filterVendor.toLowerCase() : '';
+    const startMs = filterStartDate ? new Date(filterStartDate).getTime() : 0;
+    const endMs = filterEndDate ? new Date(filterEndDate).getTime() : 0;
+
+    return invoices.filter(i => {
+       if (filterStatus !== 'All' && i.status !== filterStatus) return false;
+       if (q && !i.vendorName?.toLowerCase().includes(q)) return false;
+
+       if (startMs && i.invoiceDate) {
+          if (new Date(i.invoiceDate).getTime() < startMs) return false;
+       }
+       if (endMs && i.invoiceDate) {
+          if (new Date(i.invoiceDate).getTime() > endMs) return false;
+       }
+
+       return true;
+    });
+  }, [invoices, filterStatus, filterVendor, filterStartDate, filterEndDate]);
 
   // Auto-select all when filters change
   useEffect(() => {
     setSelectedIds(new Set(filteredInvoices.map(i => i.id)));
-  }, [filterStartDate, filterEndDate, filterStatus, filterVendor, invoices.length]);
+  }, [filteredInvoices]);
 
   const handleExport = async () => {
     const invoicesToExport = filteredInvoices.filter(i => selectedIds.has(i.id));
