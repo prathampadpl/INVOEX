@@ -1,0 +1,3 @@
+## 2024-05-18 - Hoist Expensive Parsing
+**Learning:** O(N) reductions directly inside the JSX render body (like recalculating average confidence scores) or inside large array methods without hoisting constants (like parsing Dates in filters) can cause UI jank during re-renders, particularly when rendering lists of invoices in dashboards or tables.
+**Action:** Always aggressively hoist constant calculations (like parsing `filterStartDate` and `filterEndDate` into timestamps) outside the `.filter` loops, and move derived metrics logic (like the average confidence score calculation on a per-invoice level) into `useMemo` hooks or process them upfront rather than inside the `.map` render loops.
