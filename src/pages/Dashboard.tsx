@@ -47,20 +47,26 @@ export default function Dashboard() {
   }, [workspaceId]);
 
   const filteredInvoices = useMemo(() => {
+    // ⚡ Bolt: Hoist expensive constant calculations outside the loop
+    const q = searchQuery ? searchQuery.toLowerCase() : '';
+    const startTimestamp = filterStartDate ? new Date(filterStartDate).getTime() : 0;
+    const endTimestamp = filterEndDate ? new Date(filterEndDate).getTime() + 86400000 : 0;
+
     let result = invoices.filter(inv => {
       if (statusFilter !== 'All statuses' && inv.status !== statusFilter) return false;
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
+
+      if (q) {
         if (!inv.vendorName?.toLowerCase().includes(q) && !inv.invoiceNumber?.toLowerCase().includes(q)) {
           return false;
         }
       }
       
-      if (filterStartDate) {
-        if (inv.uploadedAt && inv.uploadedAt < new Date(filterStartDate).getTime()) return false;
+      if (startTimestamp && inv.uploadedAt && inv.uploadedAt < startTimestamp) {
+        return false;
       }
-      if (filterEndDate) {
-        if (inv.uploadedAt && inv.uploadedAt > new Date(filterEndDate).getTime() + 86400000) return false;
+
+      if (endTimestamp && inv.uploadedAt && inv.uploadedAt > endTimestamp) {
+        return false;
       }
 
       return true;
@@ -90,23 +96,43 @@ export default function Dashboard() {
   const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / pageSize));
   const paginatedInvoices = filteredInvoices.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  const { approvedPercent, topVendors, dailyData } = useMemo(() => {
+  const { approvedPercent, topVendors, dailyData, avgConfidenceOverall, invoiceConfidences } = useMemo(() => {
     let approved = 0;
     const vendors: Record<string, { count: number; confSum: number }> = {};
     const days: Record<string, { date: string; volume: number; approved: number; flagged: number }> = {};
 
+    let totalScoreSum = 0;
+    let totalScoreCount = 0;
+    const invoiceConfidences = new Map<string, number>();
+
     invoices.forEach(inv => {
+      // ⚡ Bolt: compute avg confidence per invoice securely without mutating the original object
+      if (inv.confidenceScores) {
+        let sum = 0;
+        let count = 0;
+        Object.entries(inv.confidenceScores as Record<string, number>).forEach(([field, score]) => {
+          if (inv[field] !== undefined && inv[field] !== null && inv[field] !== '') {
+            sum += score;
+            count++;
+
+            // Track globally for the top-level metric
+            totalScoreSum += score;
+            totalScoreCount++;
+          }
+        });
+        if (count > 0) {
+          invoiceConfidences.set(inv.id, sum / count);
+        }
+      }
+
       if (inv.status === 'Approved') approved++;
       
       if (inv.vendorName) {
         if (!vendors[inv.vendorName]) vendors[inv.vendorName] = { count: 0, confSum: 0 };
         vendors[inv.vendorName].count++;
-        // Compute overall confidence from per-field confidenceScores map, ignoring empty fields
-        const scores = inv.confidenceScores ? Object.entries(inv.confidenceScores as Record<string, number>)
-          .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
-          .map(([, score]) => score as number) : [];
-        const avgConf = scores.length ? scores.reduce((a: number, b: number) => a + b, 0) / scores.length : 0;
-        vendors[inv.vendorName].confSum += avgConf;
+        // Use the precomputed confidence instead of doing the O(n) filtering and mapping again
+        const invoiceAvgConf = invoiceConfidences.get(inv.id) || 0;
+        vendors[inv.vendorName].confSum += invoiceAvgConf;
       }
 
       if (inv.uploadedAt) {
@@ -127,7 +153,9 @@ export default function Dashboard() {
 
     const dailyData = Object.values(days).slice(-14);
 
-    return { approvedPercent, topVendors, dailyData };
+    const avgConfidenceOverall = totalScoreCount > 0 ? (totalScoreSum / totalScoreCount).toFixed(1) : '0.0';
+
+    return { approvedPercent, topVendors, dailyData, avgConfidenceOverall, invoiceConfidences };
   }, [invoices]);
 
   const handleBulkStatusChange = async (newStatus: string) => {
@@ -234,17 +262,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent className="flex items-end justify-between">
             <div className="text-3xl font-bold text-gray-900">
-             {(() => {
-               const allScores = invoices.flatMap(inv => 
-                 inv.confidenceScores ? Object.entries(inv.confidenceScores as Record<string, number>)
-                   .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
-                   .map(([, score]) => score as number) : []
-               );
-               const avg = allScores.length
-                 ? (allScores.reduce((a: number, b: number) => a + b, 0) / allScores.length).toFixed(1)
-                 : '0.0';
-               return <>{avg}%</>;
-             })()}
+             {avgConfidenceOverall}%
             </div>
             <div className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">AI score</div>
           </CardContent>
@@ -462,19 +480,13 @@ export default function Dashboard() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      {inv.confidenceScores ? (() => {
-                        const vals = Object.entries(inv.confidenceScores as Record<string, number>)
-                          .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
-                          .map(([, score]) => score as number);
-                        const avg = vals.length ? vals.reduce((a: number, b: number) => a + b, 0) / vals.length : 0;
-                        return (
-                          <span className={`text-sm font-semibold ${
-                            avg > 80 ? 'text-emerald-600' : avg > 50 ? 'text-amber-600' : 'text-red-600'
-                          }`}>
-                            {avg.toFixed(1)}%
-                          </span>
-                        );
-                      })() : (
+                      {inv.confidenceScores && invoiceConfidences.has(inv.id) ? (
+                        <span className={`text-sm font-semibold ${
+                          (invoiceConfidences.get(inv.id) || 0) > 80 ? 'text-emerald-600' : (invoiceConfidences.get(inv.id) || 0) > 50 ? 'text-amber-600' : 'text-red-600'
+                        }`}>
+                          {(invoiceConfidences.get(inv.id) || 0).toFixed(1)}%
+                        </span>
+                      ) : (
                         <span className="text-gray-300">-</span>
                       )}
                     </TableCell>
