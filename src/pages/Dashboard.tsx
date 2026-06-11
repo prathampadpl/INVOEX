@@ -47,20 +47,23 @@ export default function Dashboard() {
   }, [workspaceId]);
 
   const filteredInvoices = useMemo(() => {
+    const q = searchQuery ? searchQuery.toLowerCase() : '';
+    const startDateTime = filterStartDate ? new Date(filterStartDate).getTime() : null;
+    const endDateTime = filterEndDate ? new Date(filterEndDate).getTime() + 86400000 : null;
+
     let result = invoices.filter(inv => {
       if (statusFilter !== 'All statuses' && inv.status !== statusFilter) return false;
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
+      if (q) {
         if (!inv.vendorName?.toLowerCase().includes(q) && !inv.invoiceNumber?.toLowerCase().includes(q)) {
           return false;
         }
       }
       
-      if (filterStartDate) {
-        if (inv.uploadedAt && inv.uploadedAt < new Date(filterStartDate).getTime()) return false;
+      if (startDateTime) {
+        if (inv.uploadedAt && inv.uploadedAt < startDateTime) return false;
       }
-      if (filterEndDate) {
-        if (inv.uploadedAt && inv.uploadedAt > new Date(filterEndDate).getTime() + 86400000) return false;
+      if (endDateTime) {
+        if (inv.uploadedAt && inv.uploadedAt > endDateTime) return false;
       }
 
       return true;
