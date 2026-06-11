@@ -47,20 +47,24 @@ export default function Dashboard() {
   }, [workspaceId]);
 
   const filteredInvoices = useMemo(() => {
+    // ⚡ Bolt: Hoisted expensive parsing outside O(N) filter loop
+    const q = searchQuery ? searchQuery.toLowerCase() : null;
+    const startFilterTime = filterStartDate ? new Date(filterStartDate).getTime() : null;
+    const endFilterTime = filterEndDate ? new Date(filterEndDate).getTime() + 86400000 : null;
+
     let result = invoices.filter(inv => {
       if (statusFilter !== 'All statuses' && inv.status !== statusFilter) return false;
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
+      if (q) {
         if (!inv.vendorName?.toLowerCase().includes(q) && !inv.invoiceNumber?.toLowerCase().includes(q)) {
           return false;
         }
       }
       
-      if (filterStartDate) {
-        if (inv.uploadedAt && inv.uploadedAt < new Date(filterStartDate).getTime()) return false;
+      if (startFilterTime && inv.uploadedAt && inv.uploadedAt < startFilterTime) {
+        return false;
       }
-      if (filterEndDate) {
-        if (inv.uploadedAt && inv.uploadedAt > new Date(filterEndDate).getTime() + 86400000) return false;
+      if (endFilterTime && inv.uploadedAt && inv.uploadedAt > endFilterTime) {
+        return false;
       }
 
       return true;
@@ -90,22 +94,32 @@ export default function Dashboard() {
   const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / pageSize));
   const paginatedInvoices = filteredInvoices.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  const { approvedPercent, topVendors, dailyData } = useMemo(() => {
+  // ⚡ Bolt: Hoisted overall average confidence calculation out of render loop into existing useMemo
+  const { approvedPercent, topVendors, dailyData, overallAvgConfidence } = useMemo(() => {
     let approved = 0;
+    let totalScoresSum = 0;
+    let totalScoresCount = 0;
     const vendors: Record<string, { count: number; confSum: number }> = {};
     const days: Record<string, { date: string; volume: number; approved: number; flagged: number }> = {};
 
     invoices.forEach(inv => {
       if (inv.status === 'Approved') approved++;
       
+      const scores = inv.confidenceScores ? Object.entries(inv.confidenceScores as Record<string, number>)
+        .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
+        .map(([, score]) => score as number) : [];
+
+      const invScoreSum = scores.length ? scores.reduce((a: number, b: number) => a + b, 0) : 0;
+
+      if (scores.length) {
+        totalScoresSum += invScoreSum;
+        totalScoresCount += scores.length;
+      }
+
       if (inv.vendorName) {
         if (!vendors[inv.vendorName]) vendors[inv.vendorName] = { count: 0, confSum: 0 };
         vendors[inv.vendorName].count++;
-        // Compute overall confidence from per-field confidenceScores map, ignoring empty fields
-        const scores = inv.confidenceScores ? Object.entries(inv.confidenceScores as Record<string, number>)
-          .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
-          .map(([, score]) => score as number) : [];
-        const avgConf = scores.length ? scores.reduce((a: number, b: number) => a + b, 0) / scores.length : 0;
+        const avgConf = scores.length ? invScoreSum / scores.length : 0;
         vendors[inv.vendorName].confSum += avgConf;
       }
 
@@ -119,6 +133,7 @@ export default function Dashboard() {
     });
 
     const approvedPercent = invoices.length ? Math.round((approved / invoices.length) * 100) : 0;
+    const overallAvgConfidence = totalScoresCount ? (totalScoresSum / totalScoresCount).toFixed(1) : '0.0';
     
     const topVendors = Object.entries(vendors)
       .map(([name, stats]) => ({ name, count: stats.count, avgConf: stats.confSum / stats.count }))
@@ -127,7 +142,7 @@ export default function Dashboard() {
 
     const dailyData = Object.values(days).slice(-14);
 
-    return { approvedPercent, topVendors, dailyData };
+    return { approvedPercent, topVendors, dailyData, overallAvgConfidence };
   }, [invoices]);
 
   const handleBulkStatusChange = async (newStatus: string) => {
@@ -234,17 +249,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent className="flex items-end justify-between">
             <div className="text-3xl font-bold text-gray-900">
-             {(() => {
-               const allScores = invoices.flatMap(inv => 
-                 inv.confidenceScores ? Object.entries(inv.confidenceScores as Record<string, number>)
-                   .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
-                   .map(([, score]) => score as number) : []
-               );
-               const avg = allScores.length
-                 ? (allScores.reduce((a: number, b: number) => a + b, 0) / allScores.length).toFixed(1)
-                 : '0.0';
-               return <>{avg}%</>;
-             })()}
+             {overallAvgConfidence}%
             </div>
             <div className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">AI score</div>
           </CardContent>
