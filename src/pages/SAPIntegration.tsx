@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Server, 
   UploadCloud, 
@@ -144,12 +144,24 @@ export default function SAPIntegration() {
     }
   };
 
-  const stats = {
-    total: invoices.length,
-    approved: invoices.filter(i => i.status === 'APPROVED').length,
-    failed: invoices.filter(i => i.status === 'FAILED').length,
-    pending: invoices.filter(i => i.status === 'PENDING').length,
-  };
+  const stats = useMemo(() => {
+    let approved = 0;
+    let failed = 0;
+    let pending = 0;
+
+    for (const i of invoices) {
+      if (i.status === 'APPROVED') approved++;
+      else if (i.status === 'FAILED') failed++;
+      else if (i.status === 'PENDING') pending++;
+    }
+
+    return {
+      total: invoices.length,
+      approved,
+      failed,
+      pending,
+    };
+  }, [invoices]);
 
   return (
     <div className="max-w-6xl mx-auto p-6 lg:p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
