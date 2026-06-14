@@ -47,20 +47,23 @@ export default function Dashboard() {
   }, [workspaceId]);
 
   const filteredInvoices = useMemo(() => {
+    const q = searchQuery ? searchQuery.toLowerCase() : '';
+    const startTimestamp = filterStartDate ? new Date(filterStartDate).getTime() : null;
+    const endTimestamp = filterEndDate ? new Date(filterEndDate).getTime() + 86400000 : null;
+
     let result = invoices.filter(inv => {
       if (statusFilter !== 'All statuses' && inv.status !== statusFilter) return false;
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
+      if (q) {
         if (!inv.vendorName?.toLowerCase().includes(q) && !inv.invoiceNumber?.toLowerCase().includes(q)) {
           return false;
         }
       }
       
-      if (filterStartDate) {
-        if (inv.uploadedAt && inv.uploadedAt < new Date(filterStartDate).getTime()) return false;
+      if (startTimestamp && inv.uploadedAt) {
+        if (inv.uploadedAt < startTimestamp) return false;
       }
-      if (filterEndDate) {
-        if (inv.uploadedAt && inv.uploadedAt > new Date(filterEndDate).getTime() + 86400000) return false;
+      if (endTimestamp && inv.uploadedAt) {
+        if (inv.uploadedAt > endTimestamp) return false;
       }
 
       return true;
@@ -90,8 +93,10 @@ export default function Dashboard() {
   const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / pageSize));
   const paginatedInvoices = filteredInvoices.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  const { approvedPercent, topVendors, dailyData } = useMemo(() => {
+  const { approvedPercent, topVendors, dailyData, overallAvgConfidence } = useMemo(() => {
     let approved = 0;
+    let totalScoreSum = 0;
+    let totalScoreCount = 0;
     const vendors: Record<string, { count: number; confSum: number }> = {};
     const days: Record<string, { date: string; volume: number; approved: number; flagged: number }> = {};
 
@@ -105,8 +110,24 @@ export default function Dashboard() {
         const scores = inv.confidenceScores ? Object.entries(inv.confidenceScores as Record<string, number>)
           .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
           .map(([, score]) => score as number) : [];
-        const avgConf = scores.length ? scores.reduce((a: number, b: number) => a + b, 0) / scores.length : 0;
-        vendors[inv.vendorName].confSum += avgConf;
+
+        if (scores.length > 0) {
+          const sum = scores.reduce((a: number, b: number) => a + b, 0);
+          vendors[inv.vendorName].confSum += sum / scores.length;
+
+          totalScoreSum += sum;
+          totalScoreCount += scores.length;
+        }
+      } else if (inv.confidenceScores) {
+        // Even if vendorName is missing, compute for overall
+        const scores = Object.entries(inv.confidenceScores as Record<string, number>)
+          .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
+          .map(([, score]) => score as number);
+
+        if (scores.length > 0) {
+          totalScoreSum += scores.reduce((a: number, b: number) => a + b, 0);
+          totalScoreCount += scores.length;
+        }
       }
 
       if (inv.uploadedAt) {
@@ -127,7 +148,9 @@ export default function Dashboard() {
 
     const dailyData = Object.values(days).slice(-14);
 
-    return { approvedPercent, topVendors, dailyData };
+    const overallAvgConfidence = totalScoreCount > 0 ? (totalScoreSum / totalScoreCount).toFixed(1) : '0.0';
+
+    return { approvedPercent, topVendors, dailyData, overallAvgConfidence };
   }, [invoices]);
 
   const handleBulkStatusChange = async (newStatus: string) => {
@@ -234,17 +257,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent className="flex items-end justify-between">
             <div className="text-3xl font-bold text-gray-900">
-             {(() => {
-               const allScores = invoices.flatMap(inv => 
-                 inv.confidenceScores ? Object.entries(inv.confidenceScores as Record<string, number>)
-                   .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
-                   .map(([, score]) => score as number) : []
-               );
-               const avg = allScores.length
-                 ? (allScores.reduce((a: number, b: number) => a + b, 0) / allScores.length).toFixed(1)
-                 : '0.0';
-               return <>{avg}%</>;
-             })()}
+             {overallAvgConfidence}%
             </div>
             <div className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">AI score</div>
           </CardContent>
