@@ -36,15 +36,19 @@ export default function Export() {
     return unsubscribe;
   }, [workspaceId]);
 
+  // ⚡ Bolt: Hoisted constant calculations outside the O(n) filter loop
+  const vendorQ = filterVendor ? filterVendor.toLowerCase() : '';
+  const startFilterTime = filterStartDate ? new Date(filterStartDate).getTime() : null;
+  const endFilterTime = filterEndDate ? new Date(filterEndDate).getTime() : null;
+
   const filteredInvoices = invoices.filter(i => {
      if (filterStatus !== 'All' && i.status !== filterStatus) return false;
-     if (filterVendor && !i.vendorName?.toLowerCase().includes(filterVendor.toLowerCase())) return false;
+     if (vendorQ && !i.vendorName?.toLowerCase().includes(vendorQ)) return false;
      
-     if (filterStartDate && i.invoiceDate) {
-        if (new Date(i.invoiceDate) < new Date(filterStartDate)) return false;
-     }
-     if (filterEndDate && i.invoiceDate) {
-        if (new Date(i.invoiceDate) > new Date(filterEndDate)) return false;
+     if (i.invoiceDate) {
+        const invTime = new Date(i.invoiceDate).getTime();
+        if (startFilterTime && invTime < startFilterTime) return false;
+        if (endFilterTime && invTime > endFilterTime) return false;
      }
      
      return true;

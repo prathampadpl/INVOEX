@@ -1,0 +1,3 @@
+## 2024-05-15 - React Render Performance: Hoisting Constants Out of Loops
+**Learning:** Found an anti-pattern where constant operations like `new Date()` parsing and string `.toLowerCase()` conversions were placed inside `.filter()` blocks during React component renders (or inside `useMemo` hooks). For large arrays (e.g. processing invoices), this triggered O(N) redundant string/date parsing during every re-render or filter change, degrading performance.
+**Action:** Always aggressively hoist constant calculations (e.g., date instantiations for filter bounds, or lowercase searches) outside of loops and array methods. Also, remember to memoize derived lists containing O(N) logic with `useMemo` so they do not execute on unrelated renders.
