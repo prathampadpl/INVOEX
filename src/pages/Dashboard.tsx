@@ -47,20 +47,24 @@ export default function Dashboard() {
   }, [workspaceId]);
 
   const filteredInvoices = useMemo(() => {
+    // ⚡ Bolt: Hoisted constant calculations outside the O(n) filter loop
+    const q = searchQuery ? searchQuery.toLowerCase() : '';
+    const startFilterTime = filterStartDate ? new Date(filterStartDate).getTime() : null;
+    const endFilterTime = filterEndDate ? new Date(filterEndDate).getTime() + 86400000 : null;
+
     let result = invoices.filter(inv => {
       if (statusFilter !== 'All statuses' && inv.status !== statusFilter) return false;
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
+      if (q) {
         if (!inv.vendorName?.toLowerCase().includes(q) && !inv.invoiceNumber?.toLowerCase().includes(q)) {
           return false;
         }
       }
       
-      if (filterStartDate) {
-        if (inv.uploadedAt && inv.uploadedAt < new Date(filterStartDate).getTime()) return false;
+      if (startFilterTime) {
+        if (inv.uploadedAt && inv.uploadedAt < startFilterTime) return false;
       }
-      if (filterEndDate) {
-        if (inv.uploadedAt && inv.uploadedAt > new Date(filterEndDate).getTime() + 86400000) return false;
+      if (endFilterTime) {
+        if (inv.uploadedAt && inv.uploadedAt > endFilterTime) return false;
       }
 
       return true;
