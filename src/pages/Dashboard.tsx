@@ -47,20 +47,24 @@ export default function Dashboard() {
   }, [workspaceId]);
 
   const filteredInvoices = useMemo(() => {
+    // ⚡ Bolt: Hoist O(N) invariant calculations out of the filter loop
+    const q = searchQuery ? searchQuery.toLowerCase() : '';
+    const startDateTime = filterStartDate ? new Date(filterStartDate).getTime() : null;
+    const endDateTime = filterEndDate ? new Date(filterEndDate).getTime() + 86400000 : null;
+
     let result = invoices.filter(inv => {
       if (statusFilter !== 'All statuses' && inv.status !== statusFilter) return false;
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
+      if (q) {
         if (!inv.vendorName?.toLowerCase().includes(q) && !inv.invoiceNumber?.toLowerCase().includes(q)) {
           return false;
         }
       }
       
-      if (filterStartDate) {
-        if (inv.uploadedAt && inv.uploadedAt < new Date(filterStartDate).getTime()) return false;
+      if (startDateTime) {
+        if (inv.uploadedAt && inv.uploadedAt < startDateTime) return false;
       }
-      if (filterEndDate) {
-        if (inv.uploadedAt && inv.uploadedAt > new Date(filterEndDate).getTime() + 86400000) return false;
+      if (endDateTime) {
+        if (inv.uploadedAt && inv.uploadedAt > endDateTime) return false;
       }
 
       return true;
@@ -95,6 +99,9 @@ export default function Dashboard() {
     const vendors: Record<string, { count: number; confSum: number }> = {};
     const days: Record<string, { date: string; volume: number; approved: number; flagged: number }> = {};
 
+    // ⚡ Bolt: Hoist O(N) invariant date formatter initialization
+    const dateFormatter = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
+
     invoices.forEach(inv => {
       if (inv.status === 'Approved') approved++;
       
@@ -110,7 +117,7 @@ export default function Dashboard() {
       }
 
       if (inv.uploadedAt) {
-        const d = new Date(inv.uploadedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const d = dateFormatter.format(new Date(inv.uploadedAt));
         if (!days[d]) days[d] = { date: d, volume: 0, approved: 0, flagged: 0 };
         days[d].volume++;
         if (inv.status === 'Approved') days[d].approved++;
