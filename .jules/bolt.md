@@ -1,0 +1,3 @@
+## 2024-06-25 - Hoisting O(N) Invariants
+**Learning:** Initializing `Intl.DateTimeFormat` or performing constant string parsing (like `String.prototype.toLowerCase()`) or `new Date()` within O(N) functional loops (`.filter()`, `.forEach()`, `.map()`) inside `useMemo` hooks creates a large CPU overhead. `Intl.DateTimeFormat` and `new Date()` can be very slow when repeatedly called in a loop over large datasets.
+**Action:** Always aggressively scan array iteration methods (especially those evaluating large data models) and aggressively hoist formatters, object/date initializers, and search string preprocessing outside of the loop block.
