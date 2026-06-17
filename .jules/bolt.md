@@ -1,0 +1,3 @@
+## 2024-06-18 - Hoisting expensive parsing outside array loops
+**Learning:** The codebase suffers from a performance anti-pattern where constant calculations like `new Date()`, `.toLowerCase()`, and `Intl.DateTimeFormat` instantiations are executed repeatedly inside large array methods like `.filter()` and `.forEach()`. In React components like Dashboard and Export, this leads to unnecessary UI jank during re-renders, especially without `useMemo`.
+**Action:** Always aggressively hoist these constants outside the loops and wrap derived list logic in `useMemo` to prevent redundant O(N) operations.
