@@ -47,20 +47,24 @@ export default function Dashboard() {
   }, [workspaceId]);
 
   const filteredInvoices = useMemo(() => {
+    // ⚡ Bolt: Hoist expensive operations outside the filter loop
+    const filterQuery = searchQuery ? searchQuery.toLowerCase() : '';
+    const startTimestamp = filterStartDate ? new Date(filterStartDate).getTime() : 0;
+    const endTimestamp = filterEndDate ? new Date(filterEndDate).getTime() + 86400000 : 0;
+
     let result = invoices.filter(inv => {
       if (statusFilter !== 'All statuses' && inv.status !== statusFilter) return false;
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
-        if (!inv.vendorName?.toLowerCase().includes(q) && !inv.invoiceNumber?.toLowerCase().includes(q)) {
+      if (filterQuery) {
+        if (!inv.vendorName?.toLowerCase().includes(filterQuery) && !inv.invoiceNumber?.toLowerCase().includes(filterQuery)) {
           return false;
         }
       }
       
-      if (filterStartDate) {
-        if (inv.uploadedAt && inv.uploadedAt < new Date(filterStartDate).getTime()) return false;
+      if (startTimestamp) {
+        if (inv.uploadedAt && inv.uploadedAt < startTimestamp) return false;
       }
-      if (filterEndDate) {
-        if (inv.uploadedAt && inv.uploadedAt > new Date(filterEndDate).getTime() + 86400000) return false;
+      if (endTimestamp) {
+        if (inv.uploadedAt && inv.uploadedAt > endTimestamp) return false;
       }
 
       return true;
@@ -95,6 +99,9 @@ export default function Dashboard() {
     const vendors: Record<string, { count: number; confSum: number }> = {};
     const days: Record<string, { date: string; volume: number; approved: number; flagged: number }> = {};
 
+    // ⚡ Bolt: Pre-instantiate DateTimeFormat to avoid expensive re-creation in the loop
+    const dateFormatter = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
+
     invoices.forEach(inv => {
       if (inv.status === 'Approved') approved++;
       
@@ -110,7 +117,7 @@ export default function Dashboard() {
       }
 
       if (inv.uploadedAt) {
-        const d = new Date(inv.uploadedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const d = dateFormatter.format(new Date(inv.uploadedAt));
         if (!days[d]) days[d] = { date: d, volume: 0, approved: 0, flagged: 0 };
         days[d].volume++;
         if (inv.status === 'Approved') days[d].approved++;

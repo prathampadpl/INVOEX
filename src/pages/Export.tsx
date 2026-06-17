@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/src/lib/store';
 import { db, handleFirestoreError, OperationType } from '@/src/lib/firebase';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
@@ -36,19 +36,25 @@ export default function Export() {
     return unsubscribe;
   }, [workspaceId]);
 
-  const filteredInvoices = invoices.filter(i => {
-     if (filterStatus !== 'All' && i.status !== filterStatus) return false;
-     if (filterVendor && !i.vendorName?.toLowerCase().includes(filterVendor.toLowerCase())) return false;
-     
-     if (filterStartDate && i.invoiceDate) {
-        if (new Date(i.invoiceDate) < new Date(filterStartDate)) return false;
-     }
-     if (filterEndDate && i.invoiceDate) {
-        if (new Date(i.invoiceDate) > new Date(filterEndDate)) return false;
-     }
-     
-     return true;
-  });
+  const filteredInvoices = useMemo(() => {
+    // ⚡ Bolt: Hoist expensive operations outside the filter loop
+    const vFilter = filterVendor ? filterVendor.toLowerCase() : '';
+    const startObj = filterStartDate ? new Date(filterStartDate) : null;
+    const endObj = filterEndDate ? new Date(filterEndDate) : null;
+
+    return invoices.filter(i => {
+       if (filterStatus !== 'All' && i.status !== filterStatus) return false;
+       if (vFilter && !i.vendorName?.toLowerCase().includes(vFilter)) return false;
+
+       if (i.invoiceDate) {
+          const d = new Date(i.invoiceDate);
+          if (startObj && d < startObj) return false;
+          if (endObj && d > endObj) return false;
+       }
+
+       return true;
+    });
+  }, [invoices, filterStatus, filterVendor, filterStartDate, filterEndDate]);
 
   // Auto-select all when filters change
   useEffect(() => {
