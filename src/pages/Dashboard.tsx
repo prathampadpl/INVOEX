@@ -47,20 +47,26 @@ export default function Dashboard() {
   }, [workspaceId]);
 
   const filteredInvoices = useMemo(() => {
+    // ⚡ Bolt Performance Optimization:
+    // Hoisted static date parsing and string lowercasing outside the O(N) filter loop
+    // to prevent redundant recalculation on every item.
+    const startFilterTime = filterStartDate ? new Date(filterStartDate).getTime() : null;
+    const endFilterTime = filterEndDate ? new Date(filterEndDate).getTime() + 86400000 : null;
+    const q = searchQuery ? searchQuery.toLowerCase() : '';
+
     let result = invoices.filter(inv => {
       if (statusFilter !== 'All statuses' && inv.status !== statusFilter) return false;
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
+      if (q) {
         if (!inv.vendorName?.toLowerCase().includes(q) && !inv.invoiceNumber?.toLowerCase().includes(q)) {
           return false;
         }
       }
       
-      if (filterStartDate) {
-        if (inv.uploadedAt && inv.uploadedAt < new Date(filterStartDate).getTime()) return false;
+      if (startFilterTime && inv.uploadedAt) {
+        if (inv.uploadedAt < startFilterTime) return false;
       }
-      if (filterEndDate) {
-        if (inv.uploadedAt && inv.uploadedAt > new Date(filterEndDate).getTime() + 86400000) return false;
+      if (endFilterTime && inv.uploadedAt) {
+        if (inv.uploadedAt > endFilterTime) return false;
       }
 
       return true;
@@ -90,27 +96,46 @@ export default function Dashboard() {
   const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / pageSize));
   const paginatedInvoices = filteredInvoices.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  const { approvedPercent, topVendors, dailyData } = useMemo(() => {
+  // ⚡ Bolt Performance Optimization:
+  // Consolidated O(N) inline JSX aggregations (like totalApproved and avg confidence)
+  // into this single useMemo pass to avoid expensive recalculations on pure UI re-renders (e.g. typing in search).
+  const { approvedPercent, topVendors, dailyData, totalApproved, totalFlagged, overallAvgConfidence } = useMemo(() => {
     let approved = 0;
+    let flagged = 0;
+    let allScoresCount = 0;
+    let allScoresSum = 0;
     const vendors: Record<string, { count: number; confSum: number }> = {};
     const days: Record<string, { date: string; volume: number; approved: number; flagged: number }> = {};
+    // ⚡ Bolt Performance Optimization:
+    // Cached Intl.DateTimeFormat instance outside the O(N) loop to avoid the massive
+    // overhead of instantiating formatters inside .toLocaleDateString() on every iteration.
+    const dateFormatter = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
 
     invoices.forEach(inv => {
+      if (inv.validationErrors?.length > 0 || inv.status === 'Ready for Review') flagged++;
       if (inv.status === 'Approved') approved++;
       
+      let currentInvAvgConf = 0;
+      if (inv.confidenceScores) {
+         const scores = Object.entries(inv.confidenceScores as Record<string, number>)
+           .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
+           .map(([, score]) => score as number);
+         if (scores.length) {
+            const sum = scores.reduce((a: number, b: number) => a + b, 0);
+            currentInvAvgConf = sum / scores.length;
+            allScoresSum += sum;
+            allScoresCount += scores.length;
+         }
+      }
+
       if (inv.vendorName) {
         if (!vendors[inv.vendorName]) vendors[inv.vendorName] = { count: 0, confSum: 0 };
         vendors[inv.vendorName].count++;
-        // Compute overall confidence from per-field confidenceScores map, ignoring empty fields
-        const scores = inv.confidenceScores ? Object.entries(inv.confidenceScores as Record<string, number>)
-          .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
-          .map(([, score]) => score as number) : [];
-        const avgConf = scores.length ? scores.reduce((a: number, b: number) => a + b, 0) / scores.length : 0;
-        vendors[inv.vendorName].confSum += avgConf;
+        vendors[inv.vendorName].confSum += currentInvAvgConf;
       }
 
       if (inv.uploadedAt) {
-        const d = new Date(inv.uploadedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const d = dateFormatter.format(new Date(inv.uploadedAt));
         if (!days[d]) days[d] = { date: d, volume: 0, approved: 0, flagged: 0 };
         days[d].volume++;
         if (inv.status === 'Approved') days[d].approved++;
@@ -127,7 +152,9 @@ export default function Dashboard() {
 
     const dailyData = Object.values(days).slice(-14);
 
-    return { approvedPercent, topVendors, dailyData };
+    const overallAvgConfidence = allScoresCount ? (allScoresSum / allScoresCount).toFixed(1) : '0.0';
+
+    return { approvedPercent, topVendors, dailyData, totalApproved: approved, totalFlagged: flagged, overallAvgConfidence };
   }, [invoices]);
 
   const handleBulkStatusChange = async (newStatus: string) => {
@@ -215,7 +242,7 @@ export default function Dashboard() {
             <CardTitle className="text-sm font-semibold text-gray-600">Auto-Approved</CardTitle>
           </CardHeader>
           <CardContent className="flex items-end justify-between">
-            <div className="text-3xl font-bold text-gray-900">{invoices.filter(i => i.status === 'Approved').length}</div>
+            <div className="text-3xl font-bold text-gray-900">{totalApproved}</div>
             <div className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">{approvedPercent}%</div>
           </CardContent>
         </Card>
@@ -224,7 +251,7 @@ export default function Dashboard() {
             <CardTitle className="text-sm font-semibold text-gray-600">Flagged for Review</CardTitle>
           </CardHeader>
           <CardContent className="flex items-end justify-between">
-            <div className="text-3xl font-bold text-gray-900">{invoices.filter(i => i.validationErrors?.length > 0 || i.status === 'Ready for Review').length}</div>
+            <div className="text-3xl font-bold text-gray-900">{totalFlagged}</div>
             <div className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">Needs review</div>
           </CardContent>
         </Card>
@@ -233,19 +260,7 @@ export default function Dashboard() {
             <CardTitle className="text-sm font-semibold text-gray-600">Avg Confidence</CardTitle>
           </CardHeader>
           <CardContent className="flex items-end justify-between">
-            <div className="text-3xl font-bold text-gray-900">
-             {(() => {
-               const allScores = invoices.flatMap(inv => 
-                 inv.confidenceScores ? Object.entries(inv.confidenceScores as Record<string, number>)
-                   .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
-                   .map(([, score]) => score as number) : []
-               );
-               const avg = allScores.length
-                 ? (allScores.reduce((a: number, b: number) => a + b, 0) / allScores.length).toFixed(1)
-                 : '0.0';
-               return <>{avg}%</>;
-             })()}
-            </div>
+            <div className="text-3xl font-bold text-gray-900">{overallAvgConfidence}%</div>
             <div className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">AI score</div>
           </CardContent>
         </Card>
