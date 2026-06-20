@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/src/lib/store';
 import { db, handleFirestoreError, OperationType } from '@/src/lib/firebase';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
@@ -36,19 +36,27 @@ export default function Export() {
     return unsubscribe;
   }, [workspaceId]);
 
-  const filteredInvoices = invoices.filter(i => {
-     if (filterStatus !== 'All' && i.status !== filterStatus) return false;
-     if (filterVendor && !i.vendorName?.toLowerCase().includes(filterVendor.toLowerCase())) return false;
-     
-     if (filterStartDate && i.invoiceDate) {
-        if (new Date(i.invoiceDate) < new Date(filterStartDate)) return false;
-     }
-     if (filterEndDate && i.invoiceDate) {
-        if (new Date(i.invoiceDate) > new Date(filterEndDate)) return false;
-     }
-     
-     return true;
-  });
+  // ⚡ Bolt: Wrapped filtering in useMemo to prevent unnecessary re-evaluations on render
+  const filteredInvoices = useMemo(() => {
+    // ⚡ Bolt: Hoisted expensive invariant calculations (toLowerCase, Date parsing) outside the loop to O(1)
+    const v = filterVendor ? filterVendor.toLowerCase() : null;
+    const startFilterTime = filterStartDate ? new Date(filterStartDate).getTime() : null;
+    const endFilterTime = filterEndDate ? new Date(filterEndDate).getTime() : null;
+
+    return invoices.filter(i => {
+       if (filterStatus !== 'All' && i.status !== filterStatus) return false;
+       if (v && !i.vendorName?.toLowerCase().includes(v)) return false;
+
+       if (startFilterTime !== null && i.invoiceDate) {
+          if (new Date(i.invoiceDate).getTime() < startFilterTime) return false;
+       }
+       if (endFilterTime !== null && i.invoiceDate) {
+          if (new Date(i.invoiceDate).getTime() > endFilterTime) return false;
+       }
+
+       return true;
+    });
+  }, [invoices, filterStatus, filterVendor, filterStartDate, filterEndDate]);
 
   // Auto-select all when filters change
   useEffect(() => {
