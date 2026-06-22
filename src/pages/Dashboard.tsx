@@ -37,7 +37,19 @@ export default function Dashboard() {
     const q = query(collection(db, path), orderBy('uploadedAt', 'desc'));
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const data = snapshot.docs.map(doc => {
+        const invData = doc.data();
+        let avgConfidence = undefined;
+        if (invData.confidenceScores) {
+          const vals = Object.entries(invData.confidenceScores as Record<string, number>)
+            .filter(([field]) => invData[field] !== undefined && invData[field] !== null && invData[field] !== '')
+            .map(([, score]) => score as number);
+          if (vals.length > 0) {
+            avgConfidence = vals.reduce((a: number, b: number) => a + b, 0) / vals.length;
+          }
+        }
+        return { id: doc.id, avgConfidence, ...invData };
+      });
       setInvoices(data);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, path);
@@ -47,21 +59,22 @@ export default function Dashboard() {
   }, [workspaceId]);
 
   const filteredInvoices = useMemo(() => {
+    const q = searchQuery ? searchQuery.toLowerCase() : '';
+    const startTimestamp = filterStartDate ? new Date(filterStartDate).getTime() : 0;
+    const endTimestamp = filterEndDate ? new Date(filterEndDate).getTime() + 86400000 : Infinity;
+
     let result = invoices.filter(inv => {
       if (statusFilter !== 'All statuses' && inv.status !== statusFilter) return false;
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
-        if (!inv.vendorName?.toLowerCase().includes(q) && !inv.invoiceNumber?.toLowerCase().includes(q)) {
+      if (q) {
+        const vendorMatch = inv.vendorName?.toLowerCase().includes(q);
+        const invoiceMatch = inv.invoiceNumber?.toLowerCase().includes(q);
+        if (!vendorMatch && !invoiceMatch) {
           return false;
         }
       }
       
-      if (filterStartDate) {
-        if (inv.uploadedAt && inv.uploadedAt < new Date(filterStartDate).getTime()) return false;
-      }
-      if (filterEndDate) {
-        if (inv.uploadedAt && inv.uploadedAt > new Date(filterEndDate).getTime() + 86400000) return false;
-      }
+      if (filterStartDate && inv.uploadedAt && inv.uploadedAt < startTimestamp) return false;
+      if (filterEndDate && inv.uploadedAt && inv.uploadedAt > endTimestamp) return false;
 
       return true;
     });
@@ -75,8 +88,13 @@ export default function Dashboard() {
         if (valA === undefined || valA === null) valA = '';
         if (valB === undefined || valB === null) valB = '';
 
-        if (typeof valA === 'string') valA = valA.toLowerCase();
-        if (typeof valB === 'string') valB = valB.toLowerCase();
+        if (sortColumn === 'confidenceScores') {
+           valA = a.avgConfidence || 0;
+           valB = b.avgConfidence || 0;
+        } else {
+          if (typeof valA === 'string') valA = valA.toLowerCase();
+          if (typeof valB === 'string') valB = valB.toLowerCase();
+        }
 
         if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
         if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
@@ -95,22 +113,21 @@ export default function Dashboard() {
     const vendors: Record<string, { count: number; confSum: number }> = {};
     const days: Record<string, { date: string; volume: number; approved: number; flagged: number }> = {};
 
+    // Hoist formatter to avoid instantiating it inside the loop
+    const dateFormatter = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
+
     invoices.forEach(inv => {
       if (inv.status === 'Approved') approved++;
       
       if (inv.vendorName) {
         if (!vendors[inv.vendorName]) vendors[inv.vendorName] = { count: 0, confSum: 0 };
         vendors[inv.vendorName].count++;
-        // Compute overall confidence from per-field confidenceScores map, ignoring empty fields
-        const scores = inv.confidenceScores ? Object.entries(inv.confidenceScores as Record<string, number>)
-          .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
-          .map(([, score]) => score as number) : [];
-        const avgConf = scores.length ? scores.reduce((a: number, b: number) => a + b, 0) / scores.length : 0;
-        vendors[inv.vendorName].confSum += avgConf;
+        // Use pre-computed avgConfidence or 0
+        vendors[inv.vendorName].confSum += inv.avgConfidence || 0;
       }
 
       if (inv.uploadedAt) {
-        const d = new Date(inv.uploadedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const d = dateFormatter.format(new Date(inv.uploadedAt));
         if (!days[d]) days[d] = { date: d, volume: 0, approved: 0, flagged: 0 };
         days[d].volume++;
         if (inv.status === 'Approved') days[d].approved++;
@@ -462,19 +479,13 @@ export default function Dashboard() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      {inv.confidenceScores ? (() => {
-                        const vals = Object.entries(inv.confidenceScores as Record<string, number>)
-                          .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
-                          .map(([, score]) => score as number);
-                        const avg = vals.length ? vals.reduce((a: number, b: number) => a + b, 0) / vals.length : 0;
-                        return (
-                          <span className={`text-sm font-semibold ${
-                            avg > 80 ? 'text-emerald-600' : avg > 50 ? 'text-amber-600' : 'text-red-600'
-                          }`}>
-                            {avg.toFixed(1)}%
-                          </span>
-                        );
-                      })() : (
+                      {inv.avgConfidence !== undefined ? (
+                        <span className={`text-sm font-semibold ${
+                          inv.avgConfidence > 80 ? 'text-emerald-600' : inv.avgConfidence > 50 ? 'text-amber-600' : 'text-red-600'
+                        }`}>
+                          {inv.avgConfidence.toFixed(1)}%
+                        </span>
+                      ) : (
                         <span className="text-gray-300">-</span>
                       )}
                     </TableCell>
