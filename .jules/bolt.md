@@ -1,0 +1,3 @@
+## 2025-06-25 - React Component Render Array Operations Hoisting
+**Learning:** O(N) data transformations like array `.reduce()` maps and filtering logic mapped with `Intl.DateTimeFormat` are incredibly detrimental to React performance when executing directly inside `useMemo` hooks or JSX return statements, resulting in blocked execution and UI jank during scaling up to large dataset operations.
+**Action:** Always aggressively hoist variable parsers (`.toLowerCase()`, `new Date().getTime()`) and formatting constructors (`new Intl.DateTimeFormat()`) outside of data parsing loops. Consolidate mapping iterations when computing dataset averages to a single O(N) execution rather than executing it via chained `.filter().map().reduce()` array methods during each frame render.
