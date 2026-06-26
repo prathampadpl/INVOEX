@@ -90,22 +90,37 @@ export default function Dashboard() {
   const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / pageSize));
   const paginatedInvoices = filteredInvoices.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  const { approvedPercent, topVendors, dailyData } = useMemo(() => {
+  const { approvedPercent, topVendors, dailyData, overallAvgConfidence } = useMemo(() => {
     let approved = 0;
+    let totalScoreSum = 0;
+    let totalScoreCount = 0;
     const vendors: Record<string, { count: number; confSum: number }> = {};
     const days: Record<string, { date: string; volume: number; approved: number; flagged: number }> = {};
 
     invoices.forEach(inv => {
       if (inv.status === 'Approved') approved++;
       
+      let invoiceScoreSum = 0;
+      let invoiceScoreCount = 0;
+
+      if (inv.confidenceScores) {
+        for (const field of Object.keys(inv.confidenceScores as Record<string, number>)) {
+          const score = (inv.confidenceScores as Record<string, number>)[field];
+          if (inv[field] !== undefined && inv[field] !== null && inv[field] !== '') {
+            invoiceScoreSum += score;
+            invoiceScoreCount++;
+          }
+        }
+      }
+
+      totalScoreSum += invoiceScoreSum;
+      totalScoreCount += invoiceScoreCount;
+
       if (inv.vendorName) {
         if (!vendors[inv.vendorName]) vendors[inv.vendorName] = { count: 0, confSum: 0 };
         vendors[inv.vendorName].count++;
-        // Compute overall confidence from per-field confidenceScores map, ignoring empty fields
-        const scores = inv.confidenceScores ? Object.entries(inv.confidenceScores as Record<string, number>)
-          .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
-          .map(([, score]) => score as number) : [];
-        const avgConf = scores.length ? scores.reduce((a: number, b: number) => a + b, 0) / scores.length : 0;
+        // Compute average confidence for this invoice
+        const avgConf = invoiceScoreCount ? invoiceScoreSum / invoiceScoreCount : 0;
         vendors[inv.vendorName].confSum += avgConf;
       }
 
@@ -127,7 +142,9 @@ export default function Dashboard() {
 
     const dailyData = Object.values(days).slice(-14);
 
-    return { approvedPercent, topVendors, dailyData };
+    const overallAvgConfidence = totalScoreCount ? (totalScoreSum / totalScoreCount).toFixed(1) : '0.0';
+
+    return { approvedPercent, topVendors, dailyData, overallAvgConfidence };
   }, [invoices]);
 
   const handleBulkStatusChange = async (newStatus: string) => {
@@ -234,17 +251,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent className="flex items-end justify-between">
             <div className="text-3xl font-bold text-gray-900">
-             {(() => {
-               const allScores = invoices.flatMap(inv => 
-                 inv.confidenceScores ? Object.entries(inv.confidenceScores as Record<string, number>)
-                   .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
-                   .map(([, score]) => score as number) : []
-               );
-               const avg = allScores.length
-                 ? (allScores.reduce((a: number, b: number) => a + b, 0) / allScores.length).toFixed(1)
-                 : '0.0';
-               return <>{avg}%</>;
-             })()}
+             {overallAvgConfidence}%
             </div>
             <div className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">AI score</div>
           </CardContent>
@@ -463,10 +470,15 @@ export default function Dashboard() {
                     </TableCell>
                     <TableCell>
                       {inv.confidenceScores ? (() => {
-                        const vals = Object.entries(inv.confidenceScores as Record<string, number>)
-                          .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
-                          .map(([, score]) => score as number);
-                        const avg = vals.length ? vals.reduce((a: number, b: number) => a + b, 0) / vals.length : 0;
+                        let sum = 0;
+                        let count = 0;
+                        for (const field of Object.keys(inv.confidenceScores as Record<string, number>)) {
+                          if (inv[field] !== undefined && inv[field] !== null && inv[field] !== '') {
+                            sum += (inv.confidenceScores as Record<string, number>)[field];
+                            count++;
+                          }
+                        }
+                        const avg = count ? sum / count : 0;
                         return (
                           <span className={`text-sm font-semibold ${
                             avg > 80 ? 'text-emerald-600' : avg > 50 ? 'text-amber-600' : 'text-red-600'

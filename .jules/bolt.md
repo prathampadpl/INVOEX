@@ -1,0 +1,5 @@
+## 2024-06-27 - Initialization\n**Learning:** Started Bolt performance analysis.\n**Action:** Will look for performance bottlenecks in React components.
+
+## 2024-06-27 - [Performance Improvement] Avoid O(N) calculation in JSX body
+**Learning:** Found a performance bottleneck where O(N*M) calculation (aggregating `confidenceScores` across all `invoices` where N=invoices, M=fields) was directly embedded in a JSX Card component render function in `src/pages/Dashboard.tsx`. It caused the entire calculation to re-run on every re-render of the Dashboard component (which happens often due to state changes like sorting, searching). Also, the data aggregation relied on chained array methods `.filter().map().reduce()` creating unnecessary intermediate arrays.
+**Action:** Always eagerly hoist expensive O(N) loops out of JSX bodies and group them within existing `useMemo` blocks when iterating over the same arrays. When calculating aggregate sums/averages for objects/maps, use a single `for...of` loop over `Object.keys()` to avoid creating intermediate garbage arrays.
