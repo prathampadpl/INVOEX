@@ -1,0 +1,5 @@
+## 2024-10-24 - Avoiding Expensive Operations Inside Loops and React Render
+
+**Learning:** Repeatedly instantiating `Intl.DateTimeFormat` or running `String.toLowerCase()` inside a `.filter` or `.map` hook that iterates over an unbounded list (like documents fetched from Firestore) causes significant memory and performance overhead in React apps. Additionally, using chained array methods (like `.flatMap().filter().map().reduce()`) directly inside a JSX render path blocks the main thread during reconciliation, as these create multiple intermediate arrays that the GC must immediately sweep up.
+
+**Action:** Always hoist invariant operations (like standardizing search queries to lowercase or parsing filter dates) outside the filter loop. For date formatting inside loops, always hoist the `new Intl.DateTimeFormat()` instantiation and reuse it. When transforming data for UI rendering from maps/arrays, replace chained methods with a single native `for...of` loop, and extract heavy derived computations from JSX into `useMemo` hooks.

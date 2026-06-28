@@ -47,20 +47,24 @@ export default function Dashboard() {
   }, [workspaceId]);
 
   const filteredInvoices = useMemo(() => {
+    // ⚡ Bolt: Hoist expensive constant operations outside the O(N) loop to prevent redundant calculations
+    const normalizedSearchQuery = searchQuery ? searchQuery.toLowerCase() : '';
+    const filterStartTimestamp = filterStartDate ? new Date(filterStartDate).getTime() : 0;
+    const filterEndTimestamp = filterEndDate ? new Date(filterEndDate).getTime() + 86400000 : Infinity;
+
     let result = invoices.filter(inv => {
       if (statusFilter !== 'All statuses' && inv.status !== statusFilter) return false;
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
-        if (!inv.vendorName?.toLowerCase().includes(q) && !inv.invoiceNumber?.toLowerCase().includes(q)) {
+      if (normalizedSearchQuery) {
+        if (!inv.vendorName?.toLowerCase().includes(normalizedSearchQuery) && !inv.invoiceNumber?.toLowerCase().includes(normalizedSearchQuery)) {
           return false;
         }
       }
       
-      if (filterStartDate) {
-        if (inv.uploadedAt && inv.uploadedAt < new Date(filterStartDate).getTime()) return false;
+      if (filterStartTimestamp > 0) {
+        if (inv.uploadedAt && inv.uploadedAt < filterStartTimestamp) return false;
       }
-      if (filterEndDate) {
-        if (inv.uploadedAt && inv.uploadedAt > new Date(filterEndDate).getTime() + 86400000) return false;
+      if (filterEndTimestamp !== Infinity) {
+        if (inv.uploadedAt && inv.uploadedAt > filterEndTimestamp) return false;
       }
 
       return true;
@@ -90,10 +94,31 @@ export default function Dashboard() {
   const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / pageSize));
   const paginatedInvoices = filteredInvoices.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
+  // ⚡ Bolt: Hoist O(N) calculation out of render and replace chained map/filter/reduce
+  // with a single loop to avoid blocking main thread and creating temporary objects.
+  const overallAvgConfidence = useMemo(() => {
+    let totalScore = 0;
+    let scoreCount = 0;
+    for (const inv of invoices) {
+      if (inv.confidenceScores) {
+        for (const [field, score] of Object.entries(inv.confidenceScores as Record<string, number>)) {
+          if (inv[field] !== undefined && inv[field] !== null && inv[field] !== '') {
+            totalScore += score;
+            scoreCount++;
+          }
+        }
+      }
+    }
+    return scoreCount > 0 ? (totalScore / scoreCount).toFixed(1) : '0.0';
+  }, [invoices]);
+
   const { approvedPercent, topVendors, dailyData } = useMemo(() => {
     let approved = 0;
     const vendors: Record<string, { count: number; confSum: number }> = {};
     const days: Record<string, { date: string; volume: number; approved: number; flagged: number }> = {};
+
+    // ⚡ Bolt: Hoist the expensive date formatter outside of the O(N) loop
+    const dateFormatter = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
 
     invoices.forEach(inv => {
       if (inv.status === 'Approved') approved++;
@@ -102,15 +127,24 @@ export default function Dashboard() {
         if (!vendors[inv.vendorName]) vendors[inv.vendorName] = { count: 0, confSum: 0 };
         vendors[inv.vendorName].count++;
         // Compute overall confidence from per-field confidenceScores map, ignoring empty fields
-        const scores = inv.confidenceScores ? Object.entries(inv.confidenceScores as Record<string, number>)
-          .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
-          .map(([, score]) => score as number) : [];
-        const avgConf = scores.length ? scores.reduce((a: number, b: number) => a + b, 0) / scores.length : 0;
+        let confSum = 0;
+        let confCount = 0;
+        if (inv.confidenceScores) {
+           for (const [field, score] of Object.entries(inv.confidenceScores as Record<string, number>)) {
+              if (inv[field] !== undefined && inv[field] !== null && inv[field] !== '') {
+                 confSum += score;
+                 confCount++;
+              }
+           }
+        }
+        // ⚡ Bolt: Replaced chained .filter.map.reduce with a single loop to avoid intermediate array allocations
+        const avgConf = confCount > 0 ? confSum / confCount : 0;
         vendors[inv.vendorName].confSum += avgConf;
       }
 
       if (inv.uploadedAt) {
-        const d = new Date(inv.uploadedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        // ⚡ Bolt: Re-use the hoisted formatter instance
+        const d = dateFormatter.format(new Date(inv.uploadedAt));
         if (!days[d]) days[d] = { date: d, volume: 0, approved: 0, flagged: 0 };
         days[d].volume++;
         if (inv.status === 'Approved') days[d].approved++;
@@ -234,17 +268,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent className="flex items-end justify-between">
             <div className="text-3xl font-bold text-gray-900">
-             {(() => {
-               const allScores = invoices.flatMap(inv => 
-                 inv.confidenceScores ? Object.entries(inv.confidenceScores as Record<string, number>)
-                   .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
-                   .map(([, score]) => score as number) : []
-               );
-               const avg = allScores.length
-                 ? (allScores.reduce((a: number, b: number) => a + b, 0) / allScores.length).toFixed(1)
-                 : '0.0';
-               return <>{avg}%</>;
-             })()}
+             {overallAvgConfidence}%
             </div>
             <div className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">AI score</div>
           </CardContent>
@@ -463,10 +487,16 @@ export default function Dashboard() {
                     </TableCell>
                     <TableCell>
                       {inv.confidenceScores ? (() => {
-                        const vals = Object.entries(inv.confidenceScores as Record<string, number>)
-                          .filter(([field]) => inv[field] !== undefined && inv[field] !== null && inv[field] !== '')
-                          .map(([, score]) => score as number);
-                        const avg = vals.length ? vals.reduce((a: number, b: number) => a + b, 0) / vals.length : 0;
+                        let confSum = 0;
+                        let confCount = 0;
+                        // ⚡ Bolt: Use a loop instead of .filter.map.reduce for row-level confidence
+                        for (const [field, score] of Object.entries(inv.confidenceScores as Record<string, number>)) {
+                          if (inv[field] !== undefined && inv[field] !== null && inv[field] !== '') {
+                            confSum += score;
+                            confCount++;
+                          }
+                        }
+                        const avg = confCount > 0 ? confSum / confCount : 0;
                         return (
                           <span className={`text-sm font-semibold ${
                             avg > 80 ? 'text-emerald-600' : avg > 50 ? 'text-amber-600' : 'text-red-600'
