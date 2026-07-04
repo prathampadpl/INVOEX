@@ -1,0 +1,3 @@
+## 2024-07-04 - [Performance Anti-Patterns in React Data Tables]
+**Learning:** Instantiating objects like `Intl.DateTimeFormat` or running `new Date().getTime()` repeatedly inside large array `.forEach()` and `.filter()` operations can severely impact performance. Additionally, performing O(N) array reduction calculations inline within JSX forces complete recalculation on every minor re-render, degrading UI responsiveness.
+**Action:** When filtering or aggregating table data, strictly hoist all static formatters and query transformations out of iterative loops. Consolidate derived aggregations (like table-wide averages) directly into existing `useMemo` computation blocks, avoiding inline calculations in the render body.
