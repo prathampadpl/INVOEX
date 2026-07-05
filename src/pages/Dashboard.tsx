@@ -47,20 +47,24 @@ export default function Dashboard() {
   }, [workspaceId]);
 
   const filteredInvoices = useMemo(() => {
+    // ⚡ Bolt: Hoist expensive constant calculations outside of filter loop
+    const q = searchQuery ? searchQuery.toLowerCase() : '';
+    const startTimestamp = filterStartDate ? new Date(filterStartDate).getTime() : 0;
+    const endTimestamp = filterEndDate ? new Date(filterEndDate).getTime() + 86400000 : 0;
+
     let result = invoices.filter(inv => {
       if (statusFilter !== 'All statuses' && inv.status !== statusFilter) return false;
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
+      if (q) {
         if (!inv.vendorName?.toLowerCase().includes(q) && !inv.invoiceNumber?.toLowerCase().includes(q)) {
           return false;
         }
       }
       
-      if (filterStartDate) {
-        if (inv.uploadedAt && inv.uploadedAt < new Date(filterStartDate).getTime()) return false;
+      if (startTimestamp) {
+        if (inv.uploadedAt && inv.uploadedAt < startTimestamp) return false;
       }
-      if (filterEndDate) {
-        if (inv.uploadedAt && inv.uploadedAt > new Date(filterEndDate).getTime() + 86400000) return false;
+      if (endTimestamp) {
+        if (inv.uploadedAt && inv.uploadedAt > endTimestamp) return false;
       }
 
       return true;
@@ -95,7 +99,11 @@ export default function Dashboard() {
     const vendors: Record<string, { count: number; confSum: number }> = {};
     const days: Record<string, { date: string; volume: number; approved: number; flagged: number }> = {};
 
-    invoices.forEach(inv => {
+    // ⚡ Bolt: Hoist expensive constant calculation outside of iteration loop
+    const dateFormatter = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
+
+    // ⚡ Bolt: Use for...of instead of forEach for better performance
+    for (const inv of invoices) {
       if (inv.status === 'Approved') approved++;
       
       if (inv.vendorName) {
@@ -110,13 +118,13 @@ export default function Dashboard() {
       }
 
       if (inv.uploadedAt) {
-        const d = new Date(inv.uploadedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const d = dateFormatter.format(new Date(inv.uploadedAt));
         if (!days[d]) days[d] = { date: d, volume: 0, approved: 0, flagged: 0 };
         days[d].volume++;
         if (inv.status === 'Approved') days[d].approved++;
         else days[d].flagged++;
       }
-    });
+    }
 
     const approvedPercent = invoices.length ? Math.round((approved / invoices.length) * 100) : 0;
     
