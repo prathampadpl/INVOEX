@@ -1,0 +1,3 @@
+## 2024-05-17 - Hoisting Expensive Object Instantiations
+**Learning:** Found unnecessary object allocations inside O(N) Array methods in React components (`useMemo`). Instantiating `new Date()` or `Intl.DateTimeFormat` on each iteration of `.map`, `.filter`, or `.forEach` causes a significant performance overhead during renders for large datasets.
+**Action:** Aggressively hoist constant calculations, such as date parsing to timestamp and `Intl.DateTimeFormat` initialization, outside of array loops. Additionally, prefer native `for...of` loops over `.forEach` in hot paths to avoid closure overhead.
