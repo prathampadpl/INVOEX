@@ -1,0 +1,3 @@
+## 2024-07-28 - Dashboard Array Anti-Patterns
+**Learning:** Found massive performance anti-patterns in `Dashboard.tsx` where `.flatMap().filter().map()` chains and `.filter()` reductions were placed directly inside the JSX render body or repeatedly executed inside loops. `Intl.DateTimeFormat` was also implicitly instantiated multiple times via `.toLocaleDateString()` inside an $O(N)$ loop.
+**Action:** Always aggressively hoist `Intl.DateTimeFormat` instances out of loops. When observing multi-pass array chains (`.filter().map().reduce()`), particularly those in the render loop, replace them with a single `for...of` pass or merge them into existing `useMemo` loops to drastically reduce GC pressure and CPU overhead on large datasets.
